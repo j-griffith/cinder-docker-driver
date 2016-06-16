@@ -1,0 +1,117 @@
+{
+	"ImportPath": "github.com/j-griffith/cinder-docker-driver",
+	"GoVersion": "go1.4",
+	"GodepVersion": "v62",
+	"Deps": [
+		{
+			"ImportPath": "github.com/Microsoft/go-winio",
+			"Comment": "v0.3.3",
+			"Rev": "3b8b3c98b207f95fe0cd6c7c311a9ac497ba7c0f"
+		},
+		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.10.0-16-gcd7d1bb",
+			"Rev": "cd7d1bbe41066b6c1f19780f895901052150a575"
+		},
+		{
+			"ImportPath": "github.com/coreos/go-systemd/activation",
+			"Comment": "v5",
+			"Rev": "7b2428fec40033549c68f54e26e89e7ca9a9ce31"
+		},
+		{
+			"ImportPath": "github.com/coreos/go-systemd/util",
+			"Comment": "v5",
+			"Rev": "7b2428fec40033549c68f54e26e89e7ca9a9ce31"
+		},
+		{
+			"ImportPath": "github.com/docker/docker/volume",
+			"Comment": "v1.4.1-11797-g78895c9",
+			"Rev": "78895c92c2baab420ae73322cc3d15009efa221e"
+		},
+		{
+			"ImportPath": "github.com/docker/go-connections/sockets",
+			"Comment": "v0.2.0-4-g5b7154b",
+			"Rev": "5b7154ba2efe13ff86ae8830a9e7cb120b080d6e"
+		},
+		{
+			"ImportPath": "github.com/docker/go-plugins-helpers/sdk",
+			"Rev": "726bdcf4333dc9bd02860d7397a4ab4797864ea5"
+		},
+		{
+			"ImportPath": "github.com/docker/go-plugins-helpers/volume",
+			"Rev": "726bdcf4333dc9bd02860d7397a4ab4797864ea5"
+		},
+		{
+			"ImportPath": "github.com/mitchellh/mapstructure",
+			"Rev": "281073eb9eb092240d33ef253c404f1cca550309"
+		},
+		{
+			"ImportPath": "github.com/opencontainers/runc/libcontainer/user",
+			"Comment": "v0.1.1-61-g6d1c115",
+			"Rev": "6d1c115b10a26e7bbfb7962b6d64e4ea775cd0d9"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/blockstorage/extensions/volumeactions",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/blockstorage/v1/volumes",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/identity/v2/tenants",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/identity/v2/tokens",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/identity/v3/tokens",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/utils",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/pagination",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/testhelper",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "github.com/rackspace/gophercloud/testhelper/client",
+			"Comment": "v1.0.0-884-g74e2fcf",
+			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
+		},
+		{
+			"ImportPath": "golang.org/x/net/proxy",
+			"Rev": "b797637b7aeeed133049c7281bfa31dcc9ca42d6"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "f64b50fbea64174967a8882830d621a18ee1548e"
+		}
+	]
+}
