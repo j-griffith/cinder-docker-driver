@@ -6,7 +6,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/rackspace/gophercloud"
 	"github.com/rackspace/gophercloud/openstack"
-	"github.com/rackspace/gophercloud/openstack/blockstorage/v1/volumes"
+	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes"
 	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/extensions/volumeactions"
 	"github.com/rackspace/gophercloud/pagination"
 	"io/ioutil"
@@ -137,7 +137,7 @@ func formatOpts(r volume.Request) {
 	}
 }
 
-func (d CinderDriver) getByName(name string) volumes.Volume {
+func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 	opts := volumes.ListOpts{Name: name}
 	vols := volumes.List(d.Client, opts)
 	var vol volumes.Volume
@@ -156,11 +156,13 @@ func (d CinderDriver) getByName(name string) volumes.Volume {
 		return false, nil
 	})
 	if err != nil {
-		return volumes.Volume{}
+		return volumes.Volume{}, nil
 	}
+	log.Info("Volume ID: ", vol.ID)
 
-	return vol
+	return vol, nil
 }
+
 func (d CinderDriver) Create(r volume.Request) volume.Response {
 	// TODO(jdg): Right now we have a weird mix for some of our semantics.  We
 	// wanted to be able to dynamically create, but create can be called when a
@@ -197,8 +199,10 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 
 func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	log.Info("Remove/Delete Volume: ", r.Name)
-	vol, err := volumes.Get(d.Client, r.Name).Extract()
-	if vol == nil {
+	//vol, err := volumes.Get(d.Client, volid.ID).Extract()
+	vol, err := d.getByName(r.Name)
+	log.Info("Remove/Delete Volume ID: ", vol.ID)
+	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Remove operation", err)
 		return volume.Response{Err: err.Error()}
 	}
@@ -220,8 +224,9 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	log.Infof("Mounting volume %s on %s\n", r.Name, "solidfire")
-	vol, err := volumes.Get(d.Client, r.Name).Extract()
-	if vol == nil {
+	//vol, err := volumes.Get(d.Client, r.Name).Extract()
+	vol, err := d.getByName(r.Name)
+	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Mount operation", err)
 		return volume.Response{Err: err.Error()}
 	}
@@ -232,10 +237,10 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	//IP, _ := netDev.Addrs()
 	//hostname, _ := os.Hostname()
 	connectorOpts := volumeactions.ConnectorOpts{
-		IP:        "192.168.0.29",
-		Host:      "bdr73.solidfire.net",
-		Initiator: "eth0",
-		Wwpns:     "",
+		IP:        "10.10.1.72",
+		Host:      "squaw.balduf.localdomain",
+		Initiator: "iqn.1993-08.org.debian:01:bc87cb2fc68",
+		Wwpns:     []string{},
 		Wwnns:     "",
 		Multipath: false,
 		Platform:  "x86",
@@ -243,48 +248,105 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	}
 	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
 	data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
+	log.Info("Init connection response data: ", data)
 	var con ConnectorInfo
 	mapstructure.Decode(data, &con)
 	path, device, err := attachVolume(&con, "default")
+	log.Info("iSCSI connection done")
 	if path == "" || device == "" && err == nil {
 		log.Error("Missing path or device, but err not set?")
-		log.Debug("Path: ", path, ",Device: ", device)
+		log.Debug("Path: ", path, " ,Device: ", device)
 		return volume.Response{Err: err.Error()}
-
 	}
 	if err != nil {
 		log.Errorf("Failed to perform iscsi attach of volume %s: %v", r.Name, err)
 		return volume.Response{Err: err.Error()}
 	}
-	log.Debugf("Attached volume at (path, devfile): %s, %s", path, device)
-	/*
+
+	if GetFSType(device) == "" {
+		//TODO(jdg): Enable selection of *other* fs types
+		log.Debugf("Formatting device")
+		err := FormatVolume(device, "ext4")
+		if err != nil {
+			err := errors.New("Failed to format device")
+			log.Error(err)
+			return volume.Response{Err: err.Error()}
+		}
+	}
+	if mountErr := Mount(device, d.Conf.MountPoint + "/" + r.Name); mountErr != nil {
+		err := errors.New("Problem mounting docker volume ")
+		log.Error(err)
+		return volume.Response{Err: err.Error()}
+	}
+
 		attachOpts := volumeactions.AttachOpts{
 			MountPoint:   d.Conf.MountPoint + r.Name,
 			InstanceUUID: d.Conf.HostUUID,
-			HostName:     "bdr73.solidfire.net",
+			HostName:     "squaw.balduf.localdomain",
 			Mode:         "rw"}
 		volumeactions.Attach(d.Client, vol.ID, &attachOpts)
-	*/
+
+	log.Info("Response: ", d.Conf.MountPoint + "/" + r.Name)
 	return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
 }
 
 func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	log.Info("Unmounting volume: ", r.Name)
-	// unreserve
-	// terminate_connection
+	if umountErr := Umount(d.Conf.MountPoint + "/" + r.Name); umountErr != nil {
+		err := errors.New("Problem Unmounting docker volume ")
+		log.Error(err)
+		return volume.Response{Err: err.Error()}
+	}
 	// detach
+	// terminate_connection
+	// unreserve
 	return volume.Response{}
 }
 
+/*
 func (d CinderDriver) Get(r volume.Request) volume.Response {
 	log.Info("Get volume: ", r.Name)
-	vol, err := volumes.Get(d.Client, r.Name).Extract()
-	if vol == nil {
+        // vol, err := volumes.Get(d.Client, r.Name).Extract()
+	// _, err := d.getByName(r.Name)
+	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Get operation", err)
 		return volume.Response{Err: err.Error()}
 	}
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	log.Info("Volume Path: ", path)
 	return volume.Response{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}
+}
+*/
+
+func (d CinderDriver) getPath(r volume.Request) (*volume.Volume, error) {
+	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	log.Debugf("Getting path for volume '%s'", path)
+
+	fi, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, err
+	}
+	if fi == nil {
+		return nil, errors.New("Could not stat ")
+	}
+
+	volume := &volume.Volume{
+		Name:       r.Name,
+		Mountpoint: path}
+	return volume, nil
+}
+
+// Get is part of the core Docker API and is called to return the filesystem path to a docker volume
+func (d CinderDriver) Get(r volume.Request) volume.Response {
+	log.Info("Get volume: ", r.Name)
+	v, err := d.getPath(r)
+	if err != nil {
+		return volume.Response{Err: err.Error()}
+	}
+
+	return volume.Response{
+		Volume: v,
+	}
 }
 
 func (d CinderDriver) List(r volume.Request) volume.Response {
@@ -314,7 +376,7 @@ func detachVolume(c *ConnectorInfo) (err error) {
 
 func attachVolume(c *ConnectorInfo, iface string) (path, device string, err error) {
 	log.Infof("Connector is: %+v\n", c)
-	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-1"
+	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-0"
 
 	if iscsiSupported() == false {
 		err := errors.New("Unable to attach, open-iscsi tools not found on host")
@@ -322,7 +384,6 @@ func attachVolume(c *ConnectorInfo, iface string) (path, device string, err erro
 		return path, device, err
 	}
 
-	// Make sure it's not already attached
 	if waitForPathToExist(path, 1) {
 		log.Debug("Get device file from path: ", path)
 		device = strings.TrimSpace(getDeviceFileFromIscsiPath(path))
@@ -336,7 +397,9 @@ func attachVolume(c *ConnectorInfo, iface string) (path, device string, err erro
 	}
 	if waitForPathToExist(path, 5) {
 		device = strings.TrimSpace(getDeviceFileFromIscsiPath(path))
+		log.Debugf("Attached volume at (path, devfile): %s, %s", path, device)
 		return path, device, nil
 	}
+
 	return path, device, nil
 }

@@ -26,6 +26,7 @@ func GetInitiatorIqns() ([]string, error) {
 
 func waitForPathToExist(fileName string, numTries int) bool {
 	for i := 0; i < numTries; i++ {
+		log.Info("waiting for path")
 		_, err := os.Stat(fileName)
 		if err == nil {
 			log.Debug("path found: ", fileName)
@@ -40,7 +41,7 @@ func waitForPathToExist(fileName string, numTries int) bool {
 }
 
 func getDeviceFileFromIscsiPath(iscsiPath string) (devFile string) {
-	log.Debug("Being utils.getDeviceFileFromIscsiPath: ", iscsiPath)
+	log.Debug("Begin utils.getDeviceFileFromIscsiPath: ", iscsiPath)
 	out, err := exec.Command("sudo", "ls", "-la", iscsiPath).CombinedOutput()
 	if err != nil {
 		return

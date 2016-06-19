@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/j-griffith/cinder-docker-driver",
+	"ImportPath": "github.com/ebalduf/cinder-docker-driver",
 	"GoVersion": "go1.4",
 	"GodepVersion": "v62",
 	"Deps": [
@@ -66,7 +66,7 @@
 			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
 		},
 		{
-			"ImportPath": "github.com/rackspace/gophercloud/openstack/blockstorage/v1/volumes",
+			"ImportPath": "github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes",
 			"Comment": "v1.0.0-884-g74e2fcf",
 			"Rev": "74e2fcf070586180d2bfde17f71ca8fcd4292ebb"
 		},
