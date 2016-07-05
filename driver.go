@@ -138,6 +138,7 @@ func formatOpts(r volume.Request) {
 }
 
 func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
+	log.Info("getVolByName: ", name)
 	opts := volumes.ListOpts{Name: name}
 	vols := volumes.List(d.Client, opts)
 	var vol volumes.Volume
@@ -153,12 +154,15 @@ func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 				return true, nil
 			}
 		}
+	        log.Error("Volume Not Found!")
 		return false, nil
 	})
 	if err != nil {
-		return volumes.Volume{}, nil
+	        log.Error("Extract Volume Error!")
+		//return volumes.Volume{}, nil
+		return volumes.Volume{}, errors.New("Not Found")
 	}
-	log.Info("Volume ID: ", vol.ID)
+	log.Info("Found Volume ID: ", vol.ID)
 
 	return vol, nil
 }
@@ -173,8 +177,9 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	log.Infof("Create volume %s on %s\n", r.Name, "Cinder")
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
-	vol, err := volumes.Get(d.Client, r.Name).Extract()
-	if vol != nil {
+	//vol, err := volumes.Get(d.Client, r.Name).Extract()
+	vol, err := d.getByName(r.Name)
+	if err != nil {
 		log.Infof("Found existing Volume by Name: %s", vol)
 		return volume.Response{}
 	}
@@ -193,7 +198,9 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 		opts.VolumeType = r.Options["type"]
 	}
 
-	vol, err = volumes.Create(d.Client, opts).Extract()
+	_, err = volumes.Create(d.Client, opts).Extract()
+        path := filepath.Join(d.Conf.MountPoint, r.Name)
+        os.Mkdir(path, os.ModeDir)
 	return volume.Response{}
 }
 
@@ -210,6 +217,8 @@ func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	if errRes.Err != nil {
 		log.Errorf("Failed to Delete volume: %s\nEncountered error: %s", vol, errRes)
 	}
+        path := filepath.Join(d.Conf.MountPoint, r.Name)
+        os.Remove(path)
 	return volume.Response{}
 }
 
@@ -304,37 +313,13 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 }
 
 /*
+// Get is part of the core Docker API and is called to return the filesystem path to a docker volume
 func (d CinderDriver) Get(r volume.Request) volume.Response {
-	log.Info("Get volume: ", r.Name)
-        // vol, err := volumes.Get(d.Client, r.Name).Extract()
-	// _, err := d.getByName(r.Name)
-	if err != nil {
-		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Get operation", err)
-		return volume.Response{Err: err.Error()}
-	}
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
 	log.Info("Volume Path: ", path)
 	return volume.Response{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}
 }
 */
-
-func (d CinderDriver) getPath(r volume.Request) (*volume.Volume, error) {
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
-	log.Debugf("Getting path for volume '%s'", path)
-
-	fi, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		return nil, err
-	}
-	if fi == nil {
-		return nil, errors.New("Could not stat ")
-	}
-
-	volume := &volume.Volume{
-		Name:       r.Name,
-		Mountpoint: path}
-	return volume, nil
-}
 
 // Get is part of the core Docker API and is called to return the filesystem path to a docker volume
 func (d CinderDriver) Get(r volume.Request) volume.Response {
@@ -347,6 +332,26 @@ func (d CinderDriver) Get(r volume.Request) volume.Response {
 	return volume.Response{
 		Volume: v,
 	}
+}
+
+func (d CinderDriver) getPath(r volume.Request) (*volume.Volume, error) {
+	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	log.Debugf("Getting path for volume '%s'", path)
+
+	fi, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+                log.Error("Path stat error.")
+		return nil, err
+	}
+	if fi == nil {
+                log.Error("Path doesn't exist!")
+		return nil, errors.New("Could not stat ")
+	}
+
+	volume := &volume.Volume{
+		Name:       r.Name,
+		Mountpoint: path}
+	return volume, nil
 }
 
 func (d CinderDriver) List(r volume.Request) volume.Response {
