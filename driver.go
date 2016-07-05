@@ -200,6 +200,7 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 
 	_, err = volumes.Create(d.Client, opts).Extract()
         path := filepath.Join(d.Conf.MountPoint, r.Name)
+        // TODO(ebalduf) check for errors
         os.Mkdir(path, os.ModeDir)
 	return volume.Response{}
 }
@@ -217,6 +218,7 @@ func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	if errRes.Err != nil {
 		log.Errorf("Failed to Delete volume: %s\nEncountered error: %s", vol, errRes)
 	}
+        // TODO(ebalduf) check for errors
         path := filepath.Join(d.Conf.MountPoint, r.Name)
         os.Remove(path)
 	return volume.Response{}
@@ -244,11 +246,11 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	//iface := d.Conf.InitiatorIFace
 	//netDev, _ := net.InterfaceByName(iface)
 	//IP, _ := netDev.Addrs()
-	//hostname, _ := os.Hostname()
+	hostname, _ := os.Hostname()
 	connectorOpts := volumeactions.ConnectorOpts{
-		IP:        "10.10.1.72",
-		Host:      "squaw.balduf.localdomain",
-		Initiator: "iqn.1993-08.org.debian:01:bc87cb2fc68",
+		IP:        "192.168.59.103",
+		Host:      hostname,
+		Initiator: "iqn.1993-08.org.debian:01:26c57bde759c",
 		Wwpns:     []string{},
 		Wwnns:     "",
 		Multipath: false,
@@ -288,10 +290,11 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 		return volume.Response{Err: err.Error()}
 	}
 
+                path = filepath.Join(d.Conf.MountPoint, r.Name)
 		attachOpts := volumeactions.AttachOpts{
-			MountPoint:   d.Conf.MountPoint + r.Name,
-			InstanceUUID: d.Conf.HostUUID,
-			HostName:     "squaw.balduf.localdomain",
+			MountPoint:   path,
+			//InstanceUUID: d.Conf.HostUUID,
+			HostName:     "docker@" + hostname,
 			Mode:         "rw"}
 		volumeactions.Attach(d.Client, vol.ID, &attachOpts)
 
@@ -301,25 +304,49 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 
 func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	log.Info("Unmounting volume: ", r.Name)
+        d.Mutex.Lock()
+        defer d.Mutex.Unlock()
+        vol, err := d.getByName(r.Name)
+        if err != nil {
+                log.Errorf("Failed to retrieve volume named: ", r.Name, "during Unmount operation", err)
+                return volume.Response{Err: err.Error()}
+        }
+
 	if umountErr := Umount(d.Conf.MountPoint + "/" + r.Name); umountErr != nil {
 		err := errors.New("Problem Unmounting docker volume ")
 		log.Error(err)
 		return volume.Response{Err: err.Error()}
 	}
-	// detach
-	// terminate_connection
+        // TODO(ebalduf) find a better way to get the portal information again
+        hostname, _ := os.Hostname()
+        connectorOpts := volumeactions.ConnectorOpts{
+                IP:        "192.168.59.103",
+                Host:      hostname,
+                Initiator: "iqn.1993-08.org.debian:01:26c57bde759c",
+                Wwpns:     []string{},
+                Wwnns:     "",
+                Multipath: false,
+                Platform:  "x86",
+                OSType:    "linux",
+        }
+	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
+	data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
+	log.Info("Init connection again to get the portal data: ", data)
+	var con ConnectorInfo
+	mapstructure.Decode(data, &con)
+        detachVolume(&con)
 	// unreserve
+        log.Info("Unreserve")
+        volumeactions.Unreserve(d.Client, vol.ID)
+	// terminate_connection
+        log.Info("Terminate Connection")
+        volumeactions.TerminateConnection(d.Client, vol.ID, &connectorOpts)
+        //data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
+	// detach
+        log.Info("Detach")
+        volumeactions.Detach(d.Client, vol.ID)
 	return volume.Response{}
 }
-
-/*
-// Get is part of the core Docker API and is called to return the filesystem path to a docker volume
-func (d CinderDriver) Get(r volume.Request) volume.Response {
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
-	log.Info("Volume Path: ", path)
-	return volume.Response{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}
-}
-*/
 
 // Get is part of the core Docker API and is called to return the filesystem path to a docker volume
 func (d CinderDriver) Get(r volume.Request) volume.Response {
@@ -381,7 +408,7 @@ func detachVolume(c *ConnectorInfo) (err error) {
 
 func attachVolume(c *ConnectorInfo, iface string) (path, device string, err error) {
 	log.Infof("Connector is: %+v\n", c)
-	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-0"
+	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-" + strconv.Itoa(c.TgtLun)
 
 	if iscsiSupported() == false {
 		err := errors.New("Unable to attach, open-iscsi tools not found on host")
