@@ -123,18 +123,29 @@ func New(cfgFile string) CinderDriver {
 	return d
 }
 
-func formatOpts(r volume.Request) {
+func (d CinderDriver) parseOpts(r volume.Request) volumes.CreateOpts {
 	// NOTE(jdg): For now we just want to minimize issues like case usage for
 	// the two basic opts most used (size and type).  Going forward we can add
 	// all sorts of things here based on what we decide to add as valid opts
 	// during create and even other calls
+
+        opts := volumes.CreateOpts {}
 	for k, v := range r.Options {
 		if strings.EqualFold(k, "size") {
-			r.Options["size"] = v
+	                vSize, err := strconv.Atoi(v)
+			if err != nil {
+				vSize = d.Conf.DefaultVolSz
+			}
+			opts.Size = vSize
 		} else if strings.EqualFold(k, "type") {
-			r.Options["type"] = v
+			if r.Options["type"] != "" {
+				opts.VolumeType = v
+			}
 		}
 	}
+        // for now we'll do this, but we should pass this in as option.
+	opts.Description = "Docker volume."
+        return opts
 }
 
 func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
@@ -151,6 +162,7 @@ func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 		for _, v := range vList {
 			if v.Name == name {
 				vol = v
+	                        log.Info("Found Volume ID: ", vol.ID)
 				return true, nil
 			}
 		}
@@ -159,14 +171,14 @@ func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 	})
 	if err != nil {
 	        log.Error("Extract Volume Error!")
-		//return volumes.Volume{}, nil
 		return volumes.Volume{}, errors.New("Not Found")
 	}
-	log.Info("Found Volume ID: ", vol.ID)
 
 	return vol, nil
 }
 
+// Create is part of the core Docker API and is called to instruct the plugin
+//   that the user wants to create a volume, given a user specified volume name.
 func (d CinderDriver) Create(r volume.Request) volume.Response {
 	// TODO(jdg): Right now we have a weird mix for some of our semantics.  We
 	// wanted to be able to dynamically create, but create can be called when a
@@ -174,10 +186,9 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	// things like compose; we need to look at reworking things to NOT use
 	// names to access Cinder volumes or some way to differentiate a create vs
 	// a "use"
-	log.Infof("Create volume %s on %s\n", r.Name, "Cinder")
+	log.Infof("Create volume %s on %s", r.Name, "Cinder")
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
-	//vol, err := volumes.Get(d.Client, r.Name).Extract()
 	vol, err := d.getByName(r.Name)
 	if err != nil {
 		log.Infof("Found existing Volume by Name: %s", vol)
@@ -186,28 +197,27 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	// FIXME(jdg): Keep in mind, NotFound isn't the only error we can get here,
 	// we can also receive a "Multiple matches" error if there are duplicate
 	// names.
-	vSize, err := strconv.Atoi(r.Options["size"])
-	if err != nil {
-		vSize = d.Conf.DefaultVolSz
-	}
-	opts := volumes.CreateOpts{
-		Size: vSize,
-		Name: r.Name,
-	}
-	if r.Options["type"] != "" {
-		opts.VolumeType = r.Options["type"]
-	}
+
+        opts := d.parseOpts(r)
+	opts.Name = r.Name
+        log.Infof("Creating with options: %+v", opts)
 
 	_, err = volumes.Create(d.Client, opts).Extract()
+	if err != nil {
+		log.Errorf("Failed to Create volume: %s\nEncountered error: %s", r.Name, err)
+		return volume.Response{Err: err.Error()}
+	}
         path := filepath.Join(d.Conf.MountPoint, r.Name)
-        // TODO(ebalduf) check for errors
-        os.Mkdir(path, os.ModeDir)
+        if err := os.Mkdir(path, os.ModeDir); err != nil {
+                log.Fatal("Failed to create Mount directory: %v", err)
+        }
 	return volume.Response{}
 }
 
+// Remove is part of the core Docker API and is called to Delete the specified
+//   volume from disk
 func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	log.Info("Remove/Delete Volume: ", r.Name)
-	//vol, err := volumes.Get(d.Client, volid.ID).Extract()
 	vol, err := d.getByName(r.Name)
 	log.Info("Remove/Delete Volume ID: ", vol.ID)
 	if err != nil {
@@ -218,23 +228,24 @@ func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	if errRes.Err != nil {
 		log.Errorf("Failed to Delete volume: %s\nEncountered error: %s", vol, errRes)
 	}
-        // TODO(ebalduf) check for errors
         path := filepath.Join(d.Conf.MountPoint, r.Name)
-        os.Remove(path)
+        if err := os.Remove(path); err != nil {
+                log.Error("Failed to remove Mount directory: %v", err)
+        }
 	return volume.Response{}
 }
 
-func (d CinderDriver) Path(r volume.Request) volume.Response {
-	log.Info("Retrieve path info for volume: ", r.Name)
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
-	log.Debug("Path reported as: ", path)
-	return volume.Response{Mountpoint: path}
-}
-
+// Mount is part of the core Docker API and is called to provide a volume,
+//   given a user specified volume name. This is called once per container
+//   start. If the same volume_name is requested more than once, the plugin may
+//   need to keep track of each new mount request and provision at the first
+//   mount request and deprovision at the last corresponding unmount request.
 func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
-	log.Infof("Mounting volume %s on %s\n", r.Name, "solidfire")
+	hostname, _ := os.Hostname()
+	log.Infof("Mounting volume %s on %s", r.Name, hostname)
+        log.Infof("Data: ", r)
 	//vol, err := volumes.Get(d.Client, r.Name).Extract()
 	vol, err := d.getByName(r.Name)
 	if err != nil {
@@ -246,7 +257,6 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	//iface := d.Conf.InitiatorIFace
 	//netDev, _ := net.InterfaceByName(iface)
 	//IP, _ := netDev.Addrs()
-	hostname, _ := os.Hostname()
 	connectorOpts := volumeactions.ConnectorOpts{
 		IP:        "192.168.59.103",
 		Host:      hostname,
@@ -293,8 +303,8 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
                 path = filepath.Join(d.Conf.MountPoint, r.Name)
 		attachOpts := volumeactions.AttachOpts{
 			MountPoint:   path,
-			//InstanceUUID: d.Conf.HostUUID,
-			HostName:     "docker@" + hostname,
+			InstanceUUID: d.Conf.HostUUID,
+			HostName:     hostname,
 			Mode:         "rw"}
 		volumeactions.Attach(d.Client, vol.ID, &attachOpts)
 
@@ -302,8 +312,12 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
 }
 
+// Unmount is part of the core Docker API and is called to indicate that Docker
+//   no longer is using the named volume. This is called once per container
+//   stop. Plugin may deduce that it is safe to deprovision it at this point.
 func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	log.Info("Unmounting volume: ", r.Name)
+        log.Info("Data: ", r)
         d.Mutex.Lock()
         defer d.Mutex.Unlock()
         vol, err := d.getByName(r.Name)
@@ -346,32 +360,47 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
         log.Info("Detach")
         volumeactions.Detach(d.Client, vol.ID)
 	return volume.Response{}
+        //return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
 }
 
-// Get is part of the core Docker API and is called to return the filesystem path to a docker volume
+// Path is part of the core Docker API and is called to remind Docker of the
+//   path to the volume on the host.
+func (d CinderDriver) Path(r volume.Request) volume.Response {
+	log.Info("Retrieve path info for volume: ", r.Name)
+	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	return volume.Response{ Mountpoint: path, }
+}
+
+/* We'll need/want this for Docker 1.12
+// Capabilities is part of the core Docker API and is called to determine if the
+//   volume is globally accessible for not.
+func (d CinderDriver) Capabilities(r volume.Request) volume.Response {
+        return volume.Response{Capabilities: volume.Capability{Scope: "global"}}
+}
+*/
+
+// Get is part of the core Docker API and is called to get the volume info
 func (d CinderDriver) Get(r volume.Request) volume.Response {
 	log.Info("Get volume: ", r.Name)
-	v, err := d.getPath(r)
+	v, err := d.getStatus(r)
 	if err != nil {
 		return volume.Response{Err: err.Error()}
 	}
 
-	return volume.Response{
-		Volume: v,
-	}
+	return volume.Response{ Volume: v, }
 }
 
-func (d CinderDriver) getPath(r volume.Request) (*volume.Volume, error) {
+func (d CinderDriver) getStatus(r volume.Request) (*volume.Volume, error) {
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
-	log.Debugf("Getting path for volume '%s'", path)
+	log.Debugf("Getting status for volume '%s'", path)
 
 	fi, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-                log.Error("Path stat error.")
+                log.Debug("Path does not exist.")
 		return nil, err
 	}
 	if fi == nil {
-                log.Error("Path doesn't exist!")
+                log.Error("Path, could not stat error!")
 		return nil, errors.New("Could not stat ")
 	}
 
@@ -381,6 +410,7 @@ func (d CinderDriver) getPath(r volume.Request) (*volume.Volume, error) {
 	return volume, nil
 }
 
+// List is part of the core Docker API and is called to is the volumes
 func (d CinderDriver) List(r volume.Request) volume.Response {
 	log.Info("List volumes: ", r.Name)
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
@@ -407,7 +437,7 @@ func detachVolume(c *ConnectorInfo) (err error) {
 }
 
 func attachVolume(c *ConnectorInfo, iface string) (path, device string, err error) {
-	log.Infof("Connector is: %+v\n", c)
+	log.Infof("Connector is: %+v", c)
 	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-" + strconv.Itoa(c.TgtLun)
 
 	if iscsiSupported() == false {
