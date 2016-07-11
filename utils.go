@@ -2,11 +2,25 @@ package main
 
 import (
 	log "github.com/Sirupsen/logrus"
+//	"github.com/spakin/awk"
+//	"bytes"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
+
+func removeNetmask(fulladdr string) string {
+	wordcount := 0
+	for i := range fulladdr {
+		if fulladdr[i] != '/' {
+			wordcount++
+		} else {
+			break
+		}
+	}
+	return fulladdr[0:wordcount]
+}
 
 func GetInitiatorIqns() ([]string, error) {
 	var iqns []string
@@ -47,10 +61,32 @@ func getDeviceFileFromIscsiPath(iscsiPath string) (devFile string) {
 		return
 	}
 	d := strings.Split(string(out), "../../")
-	log.Debug("Found d: ", d)
+	log.Debugf("Found device: %s", d)
 	devFile = "/dev/" + d[1]
-	log.Debug("using base of: ", devFile)
 	devFile = strings.TrimSpace(devFile)
+	log.Debug("using base of: ", devFile)
+	return
+}
+
+func getTgtFromMountPoint(mountpoint string) (target string, portal string) {
+	log.Debugf("Get iSCSI target for path %s", mountpoint)
+	out, err := exec.Command("sudo", "df", "--output=source", mountpoint).CombinedOutput()
+        if err != nil {
+                return
+        }
+	device := "../../" + strings.Split(strings.Fields(string(out))[1], "/")[2]
+
+	out, err = exec.Command("sudo", "ls", "-l", "/dev/disk/by-path").CombinedOutput()
+        if err != nil {
+                return
+        }
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, device) {
+			target = strings.Split((strings.Split(line, "-iscsi-")[1]), "-lun-")[0]
+			portal = strings.Split((strings.Split(line, " ip-")[1]), "-iscsi-")[0]
+		}
+	}
 	return
 }
 

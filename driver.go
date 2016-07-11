@@ -10,7 +10,7 @@ import (
 	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/extensions/volumeactions"
 	"github.com/rackspace/gophercloud/pagination"
 	"io/ioutil"
-	//"net"
+	"net"
 	"errors"
 	"os"
 	"path/filepath"
@@ -120,28 +120,26 @@ func New(cfgFile string) CinderDriver {
 		Mutex:  &sync.Mutex{},
 		Client: client,
 	}
+
 	return d
 }
 
 func (d CinderDriver) parseOpts(r volume.Request) volumes.CreateOpts {
-	// NOTE(jdg): For now we just want to minimize issues like case usage for
-	// the two basic opts most used (size and type).  Going forward we can add
-	// all sorts of things here based on what we decide to add as valid opts
-	// during create and even other calls
-
         opts := volumes.CreateOpts {}
+        opts.Size = d.Conf.DefaultVolSz
 	for k, v := range r.Options {
-		if strings.EqualFold(k, "size") {
-	                vSize, err := strconv.Atoi(v)
-			if err != nil {
-				vSize = d.Conf.DefaultVolSz
-			}
-			opts.Size = vSize
-		} else if strings.EqualFold(k, "type") {
+		log.Debugf("Option: %s = %s", k, v)
+		switch k {
+		case "size":
+			vSize, err := strconv.Atoi(v)
+                        if err == nil {
+                                opts.Size = vSize
+                        }
+		case "type":
 			if r.Options["type"] != "" {
 				opts.VolumeType = v
 			}
-		}
+		}	
 	}
         // for now we'll do this, but we should pass this in as option.
 	opts.Description = "Docker volume."
@@ -149,7 +147,7 @@ func (d CinderDriver) parseOpts(r volume.Request) volumes.CreateOpts {
 }
 
 func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
-	log.Info("getVolByName: ", name)
+	log.Debug("getVolByName: ", name)
 	opts := volumes.ListOpts{Name: name}
 	vols := volumes.List(d.Client, opts)
 	var vol volumes.Volume
@@ -162,7 +160,7 @@ func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 		for _, v := range vList {
 			if v.Name == name {
 				vol = v
-	                        log.Info("Found Volume ID: ", vol.ID)
+	                        log.Debug("Found Volume ID: ", vol.ID)
 				return true, nil
 			}
 		}
@@ -191,7 +189,7 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	defer d.Mutex.Unlock()
 	vol, err := d.getByName(r.Name)
 	if err != nil {
-		log.Infof("Found existing Volume by Name: %s", vol)
+		log.Debugf("Found existing Volume by Name: %s", vol)
 		return volume.Response{}
 	}
 	// FIXME(jdg): Keep in mind, NotFound isn't the only error we can get here,
@@ -200,7 +198,7 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 
         opts := d.parseOpts(r)
 	opts.Name = r.Name
-        log.Infof("Creating with options: %+v", opts)
+        log.Debugf("Creating with options: %+v", opts)
 
 	_, err = volumes.Create(d.Client, opts).Extract()
 	if err != nil {
@@ -218,8 +216,9 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 //   volume from disk
 func (d CinderDriver) Remove(r volume.Request) volume.Response {
 	log.Info("Remove/Delete Volume: ", r.Name)
+	// TODO(ebalduf): Check error code
 	vol, err := d.getByName(r.Name)
-	log.Info("Remove/Delete Volume ID: ", vol.ID)
+	log.Debugf("Remove/Delete Volume ID: %s", vol.ID)
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Remove operation", err)
 		return volume.Response{Err: err.Error()}
@@ -244,9 +243,7 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	hostname, _ := os.Hostname()
-	log.Infof("Mounting volume %s on %s", r.Name, hostname)
-        log.Infof("Data: ", r)
-	//vol, err := volumes.Get(d.Client, r.Name).Extract()
+	log.Infof("Mounting volume %+v on %s", r, hostname)
 	vol, err := d.getByName(r.Name)
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Mount operation", err)
@@ -254,13 +251,20 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	}
 	volumeactions.Reserve(d.Client, vol.ID)
 
-	//iface := d.Conf.InitiatorIFace
-	//netDev, _ := net.InterfaceByName(iface)
-	//IP, _ := netDev.Addrs()
+	iface := d.Conf.InitiatorIFace
+	netDev, _ := net.InterfaceByName(iface)
+	IPs, _ := net.InterfaceAddrs()
+        log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
+        initiator, err := GetInitiatorIqns()
+	if err != nil {
+		log.Error("Failed to retrieve Initiator name!")
+		return volume.Response{ Err : err.Error() }
+	}
 	connectorOpts := volumeactions.ConnectorOpts{
-		IP:        "192.168.59.103",
+		IP:        removeNetmask(IPs[int(netDev.Index)-1].String()),
 		Host:      hostname,
-		Initiator: "iqn.1993-08.org.debian:01:26c57bde759c",
+		// TODO(ebalduf): Change assumption that we have only one Initiator defined
+		Initiator: initiator[0],
 		Wwpns:     []string{},
 		Wwnns:     "",
 		Multipath: false,
@@ -269,11 +273,11 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	}
 	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
 	data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
-	log.Info("Init connection response data: ", data)
+	log.Debugf("Init connection response data: %+v", data)
 	var con ConnectorInfo
 	mapstructure.Decode(data, &con)
 	path, device, err := attachVolume(&con, "default")
-	log.Info("iSCSI connection done")
+	log.Debug("iSCSI connection done")
 	if path == "" || device == "" && err == nil {
 		log.Error("Missing path or device, but err not set?")
 		log.Debug("Path: ", path, " ,Device: ", device)
@@ -308,7 +312,7 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 			Mode:         "rw"}
 		volumeactions.Attach(d.Client, vol.ID, &attachOpts)
 
-	log.Info("Response: ", d.Conf.MountPoint + "/" + r.Name)
+	log.Debug("Response: ", d.Conf.MountPoint + "/" + r.Name)
 	return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
 }
 
@@ -316,8 +320,7 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 //   no longer is using the named volume. This is called once per container
 //   stop. Plugin may deduce that it is safe to deprovision it at this point.
 func (d CinderDriver) Unmount(r volume.Request) volume.Response {
-	log.Info("Unmounting volume: ", r.Name)
-        log.Info("Data: ", r)
+	log.Infof("Unmounting volume: %+v", r)
         d.Mutex.Lock()
         defer d.Mutex.Unlock()
         vol, err := d.getByName(r.Name)
@@ -331,36 +334,43 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 		log.Error(err)
 		return volume.Response{Err: err.Error()}
 	}
-        // TODO(ebalduf) find a better way to get the portal information again
-        hostname, _ := os.Hostname()
-        connectorOpts := volumeactions.ConnectorOpts{
-                IP:        "192.168.59.103",
-                Host:      hostname,
-                Initiator: "iqn.1993-08.org.debian:01:26c57bde759c",
-                Wwpns:     []string{},
-                Wwnns:     "",
-                Multipath: false,
-                Platform:  "x86",
-                OSType:    "linux",
-        }
-	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
-	data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
-	log.Info("Init connection again to get the portal data: ", data)
-	var con ConnectorInfo
-	mapstructure.Decode(data, &con)
-        detachVolume(&con)
+
+	// Disconnect the iscsi target from the client
+	tgt, portal := getTgtFromMountPoint(d.Conf.MountPoint + "/" + r.Name)
+        iscsiDetachVolume(tgt, portal)
 	// unreserve
-        log.Info("Unreserve")
+        log.Debug("Unreserve")
         volumeactions.Unreserve(d.Client, vol.ID)
+
 	// terminate_connection
-        log.Info("Terminate Connection")
+        log.Debug("Terminate Connection")
+	iface := d.Conf.InitiatorIFace
+	netDev, _ := net.InterfaceByName(iface)
+	IPs, _ := net.InterfaceAddrs()
+	log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
+	initiator, err := GetInitiatorIqns()
+	if err != nil {
+		log.Error("Failed to retrieve Initiator name!")
+		return volume.Response{ Err : err.Error() }
+	}
+	hostname, _ := os.Hostname()
+	connectorOpts := volumeactions.ConnectorOpts{
+		IP:        removeNetmask(IPs[int(netDev.Index)-1].String()),
+		Host:      hostname,
+		// TODO(ebalduf): Change assumption that we have only one Initiator defined
+		Initiator: initiator[0],
+		Wwpns:     []string{},
+		Wwnns:     "",
+		Multipath: false,
+		Platform:  "x86",
+		OSType:    "linux",
+	}
         volumeactions.TerminateConnection(d.Client, vol.ID, &connectorOpts)
-        //data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
+
 	// detach
-        log.Info("Detach")
+        log.Debug("Detach")
         volumeactions.Detach(d.Client, vol.ID)
 	return volume.Response{}
-        //return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
 }
 
 // Path is part of the core Docker API and is called to remind Docker of the
@@ -426,18 +436,18 @@ func (d CinderDriver) List(r volume.Request) volume.Response {
 	return volume.Response{Volumes: vols}
 }
 
-func detachVolume(c *ConnectorInfo) (err error) {
-	tgt := &ISCSITarget{
-		Ip:     c.TgtPortal,
-		Portal: c.TgtPortal,
-		Iqn:    c.TgtIQN,
+func iscsiDetachVolume(tgt string, portal string) (err error) {
+	target := &ISCSITarget{
+		Ip:     portal,
+		Portal: portal,
+		Iqn:    tgt,
 	}
-	err = iscsiDisableDelete(tgt)
+	err = iscsiDisableDelete(target)
 	return
 }
 
 func attachVolume(c *ConnectorInfo, iface string) (path, device string, err error) {
-	log.Infof("Connector is: %+v", c)
+	log.Debugf("Connector is: %+v", c)
 	path = "/dev/disk/by-path/ip-" + c.TgtPortal + "-iscsi-" + c.TgtIQN + "-lun-" + strconv.Itoa(c.TgtLun)
 
 	if iscsiSupported() == false {
