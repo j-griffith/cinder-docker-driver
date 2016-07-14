@@ -11,7 +11,6 @@ var (
 	defaultDir = filepath.Join(volume.DefaultDockerRootDirectory, "cinder")
 )
 
-//func main(cfgFile string, debug bool) {
 func main() {
 	cfgFile := flag.String("config", "/var/lib/cinder/dockerdriver/config.json", "path to config file")
 	debug := flag.Bool("debug", true, "enable debug logging")

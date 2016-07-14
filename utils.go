@@ -1,30 +1,49 @@
 package main
 
 import (
+	"errors"
 	log "github.com/Sirupsen/logrus"
+	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
 
+func removeNetmask(fulladdr string) string {
+	wordcount := 0
+	for i := range fulladdr {
+		if fulladdr[i] != '/' {
+			wordcount++
+		} else {
+			break
+		}
+	}
+	return fulladdr[0:wordcount]
+}
+
 func GetInitiatorIqns() ([]string, error) {
 	var iqns []string
 	out, err := exec.Command("sudo", "cat", "/etc/iscsi/initiatorname.iscsi").CombinedOutput()
+	log.Debugf("output and err from cat... %s, %s", out, err)
 	if err != nil {
 		log.Error("Error encountered gathering initiator names: ", err)
 		return nil, err
 	}
 	lines := strings.Split(string(out), "\n")
 	for _, l := range lines {
+		log.Debugf("Inspect line: %s", l)
 		if strings.Contains(l, "InitiatorName=") {
 			iqns = append(iqns, strings.Split(l, "=")[1])
 		}
 	}
+	log.Debugf("Found the following iqns: %s", iqns)
 	return iqns, nil
 }
 
 func waitForPathToExist(fileName string, numTries int) bool {
+	log.Info("Waiting for path")
 	for i := 0; i < numTries; i++ {
 		_, err := os.Stat(fileName)
 		if err == nil {
@@ -40,16 +59,58 @@ func waitForPathToExist(fileName string, numTries int) bool {
 }
 
 func getDeviceFileFromIscsiPath(iscsiPath string) (devFile string) {
-	log.Debug("Being utils.getDeviceFileFromIscsiPath: ", iscsiPath)
+	log.Debug("Begin utils.getDeviceFileFromIscsiPath: ", iscsiPath)
 	out, err := exec.Command("sudo", "ls", "-la", iscsiPath).CombinedOutput()
 	if err != nil {
 		return
 	}
 	d := strings.Split(string(out), "../../")
-	log.Debug("Found d: ", d)
+	log.Debugf("Found device: %s", d)
 	devFile = "/dev/" + d[1]
-	log.Debug("using base of: ", devFile)
 	devFile = strings.TrimSpace(devFile)
+	log.Debug("using base of: ", devFile)
+	return
+}
+
+func getTgtInfo(v volumes.Volume) (target string, portal string) {
+	out, err := exec.Command("sudo", "ls", "-l", "/dev/disk/by-path").CombinedOutput()
+	if err != nil {
+		log.Error("Failed to list contents of /dev/disk/by-path/: ", err)
+		return
+	}
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, v.ID) {
+			target = strings.Split((strings.Split(line, "-iscsi-")[1]), "-lun-")[0]
+			portal = strings.Split((strings.Split(line, " ip-")[1]), "-iscsi-")[0]
+		}
+	}
+	return
+}
+
+func getTgtFromMountPoint(mountpoint string) (target string, portal string) {
+	log.Infof("Get iSCSI target for path %s", mountpoint)
+	out, err := exec.Command("sudo", "df", "--output=source", mountpoint).CombinedOutput()
+	if err != nil {
+		log.Error("Failed to obtain device info from df cmd: ", err)
+		return
+	}
+
+	device := "../../" + strings.Split(strings.Fields(string(out))[1], "/")[2]
+	log.Debug("Formed the device: ", device)
+	out, err = exec.Command("sudo", "ls", "-l", "/dev/disk/by-path").CombinedOutput()
+	if err != nil {
+		log.Error("Failed to list contents of /dev/disk/by-path/: ", err)
+		return
+	}
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		log.Debugf("check line %s for %s...", line, device)
+		if strings.Contains(line, device) {
+			target = strings.Split((strings.Split(line, "-iscsi-")[1]), "-lun-")[0]
+			portal = strings.Split((strings.Split(line, " ip-")[1]), "-iscsi-")[0]
+		}
+	}
 	return
 }
 
@@ -139,7 +200,13 @@ func Mount(device, mountpoint string) error {
 func Umount(mountpoint string) error {
 	log.Debugf("Begin utils.Umount: %s", mountpoint)
 	out, err := exec.Command("umount", mountpoint).CombinedOutput()
-	log.Debug("Response from umount ", mountpoint, ": ", out)
+	if err != nil {
+		log.Warningf("Unmount call returned error: %s (%s)", err, out)
+		if strings.Contains(string(out), "not mounted") {
+			log.Debug("Ignore request for unmount on unmounted volume")
+			err = errors.New("Volume is not mounted")
+		}
+	}
 	return err
 }
 
@@ -156,6 +223,7 @@ func iscsiadmCmd(args []string) error {
 func LoginWithChap(tiqn, portal, username, password, iface string) error {
 	args := []string{"-m", "node", "-T", tiqn, "-p", portal}
 	createArgs := append(args, []string{"--interface", iface, "--op", "new"}...)
+	log.Debugf("Create the node entry using args:  %+v", args)
 
 	if _, err := exec.Command("iscsiadm", createArgs...).CombinedOutput(); err != nil {
 		log.Errorf("Error running iscsiadm %s", createArgs)
@@ -169,20 +237,59 @@ func LoginWithChap(tiqn, portal, username, password, iface string) error {
 		return err
 	}
 
+	log.Debug("Update username to: ", username)
 	authUserArgs := append(args, []string{"--op=update", "--name", "node.session.auth.username", "--value=" + username}...)
 	if _, err := exec.Command("iscsiadm", authUserArgs...).CombinedOutput(); err != nil {
 		log.Error(os.Stderr, "Error running iscsiadm set authuser: ", err)
 		return err
 	}
+
+	log.Debug("Update password to: ", password)
 	authPasswordArgs := append(args, []string{"--op=update", "--name", "node.session.auth.password", "--value=" + password}...)
 	if _, err := exec.Command("iscsiadm", authPasswordArgs...).CombinedOutput(); err != nil {
 		log.Error(os.Stderr, "Error running iscsiadm set authpassword: ", err)
 		return err
 	}
+
 	loginArgs := append(args, []string{"--login"}...)
 	if _, err := exec.Command("iscsiadm", loginArgs...).CombinedOutput(); err != nil {
 		log.Error(os.Stderr, "Error running iscsiadm login: ", err, loginArgs)
 		return err
 	}
+	log.Infof("Logged into iSCSI target without error: %+v", loginArgs)
 	return nil
+}
+
+func getDefaultIFace() (string, error) {
+	args := []string{"route", "get", "8.8.8.8", "|", "head", "-1", "|", "cut", "-d' '", "-f8"}
+
+	if iface, err := exec.Command("route", args...).CombinedOutput(); err != nil {
+		log.Errorf("Error running route %s", args)
+		return "", err
+	} else {
+		return string(iface), nil
+	}
+}
+
+func getIPv4ForIFace(ifname string) (string, error) {
+	interfaces, _ := net.Interfaces()
+	if ifname == "default" {
+		ifname, _ = getDefaultIFace()
+	}
+
+	for _, inter := range interfaces {
+		if inter.Name == ifname {
+			if addrs, err := inter.Addrs(); err == nil {
+				for _, addr := range addrs {
+					switch ip := addr.(type) {
+					case *net.IPNet:
+						if ip.IP.DefaultMask() != nil {
+							return ip.IP.String(), nil
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", nil
 }
