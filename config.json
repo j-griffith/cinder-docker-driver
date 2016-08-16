@@ -1,8 +1,4 @@
 {
-    "DefaultVolSz": 1,
-    "MountPoint": "/var/lib/cinder/mnt",
-    "InitiatorIFace": "eth0",
-    "HostUUID": "8d1779e3-a47c-4071-a12e-6e3f8486ef9b",
     "Endpoint": "http://172.16.140.245:5000/v2.0",
     "Username": "admin",
     "Password": "solidfire",

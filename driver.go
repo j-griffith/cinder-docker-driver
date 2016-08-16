@@ -86,7 +86,17 @@ func processConfig(cfg string) (Config, error) {
 	if conf.DefaultVolSz == 0 {
 		conf.DefaultVolSz = 1
 	}
+	if conf.HostUUID == "" {
+		conf.HostUUID, _ = getRootDiskUUID()
+		log.Infof("Set node UUID to: %s", conf.HostUUID)
+	}
 	conf.InitiatorIP, _ = getIPv4ForIFace(conf.InitiatorIFace)
+	log.Infof("Set InitiatorIFace to: %s", conf.InitiatorIFace)
+	log.Infof("Set node InitiatorIP to: %s", conf.InitiatorIP)
+	log.Infof("Set DefaultVolSz to: %d GiB", conf.DefaultVolSz)
+	log.Infof("Set Endpoint to: %s", conf.Endpoint)
+	log.Infof("Set Username to: %s", conf.Username)
+	log.Infof("Set TenantID to: %s", conf.TenantID)
 	return conf, nil
 }
 

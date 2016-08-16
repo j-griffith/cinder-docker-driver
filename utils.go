@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes"
 	"net"
@@ -261,14 +262,17 @@ func LoginWithChap(tiqn, portal, username, password, iface string) error {
 }
 
 func getDefaultIFace() (string, error) {
-	args := []string{"route", "get", "8.8.8.8", "|", "head", "-1", "|", "cut", "-d' '", "-f8"}
-
-	if iface, err := exec.Command("route", args...).CombinedOutput(); err != nil {
-		log.Errorf("Error running route %s", args)
+	cmd := "ip route get 8.8.8.8 | head -1 | cut -d ' ' -f5"
+	iface, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		log.Errorf("Error detecting default iface: %s", cmd)
+		log.Errorf("%s", err)
 		return "", err
 	} else {
 		return string(iface), nil
 	}
+
+	return string(iface), nil
 }
 
 func getIPv4ForIFace(ifname string) (string, error) {
@@ -292,4 +296,20 @@ func getIPv4ForIFace(ifname string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func getRootDiskUUID() (string, error) {
+	cmd := "mount | grep \" / \"|cut -d' ' -f 1"
+	device, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		log.Errorf("Error detecting root disk: %s (%s)", cmd, device)
+		return "", err
+	}
+
+	cmd = fmt.Sprintf("blkid %s|cut -d' ' -f2", device)
+	uuidString, _ := exec.Command("sh", "-c", cmd).Output()
+	uuid := strings.Split(string(uuidString), "UUID=\"")[1]
+	uuid = strings.Split(string(uuid), " ")[0]
+	uuid = strings.Replace(uuid, "\"", " ", -1)
+	return uuid, nil
 }
