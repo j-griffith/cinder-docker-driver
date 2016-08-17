@@ -91,6 +91,7 @@ func processConfig(cfg string) (Config, error) {
 		log.Infof("Set node UUID to: %s", conf.HostUUID)
 	}
 	conf.InitiatorIP, _ = getIPv4ForIFace(conf.InitiatorIFace)
+	log.Infof("Using config file: %s", cfg)
 	log.Infof("Set InitiatorIFace to: %s", conf.InitiatorIFace)
 	log.Infof("Set node InitiatorIP to: %s", conf.InitiatorIP)
 	log.Infof("Set DefaultVolSz to: %d GiB", conf.DefaultVolSz)

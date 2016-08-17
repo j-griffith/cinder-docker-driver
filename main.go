@@ -14,6 +14,7 @@ var (
 func main() {
 	cfgFile := flag.String("config", "/var/lib/cinder/dockerdriver/config.json", "path to config file")
 	debug := flag.Bool("debug", true, "enable debug logging")
+	flag.Parse()
 	if *debug == true {
 		log.SetLevel(log.DebugLevel)
 	} else {
