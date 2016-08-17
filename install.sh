@@ -12,9 +12,9 @@ DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download
 BIN_DIR="/usr/bin"
 
 do_install() {
-mkdir -p /var/lib/cinder/dockerdriver
-mkdir -p /var/lib/cinder/mount
-curl -sSL -o $BIN_DIR/$BIN_NAME $DRIVER_URL
+sudo mkdir -p /var/lib/cinder/dockerdriver
+sudo mkdir -p /var/lib/cinder/mount
+sudo curl -sSL -o $BIN_DIR/$BIN_NAME $DRIVER_URL
 }
 
 do_install
