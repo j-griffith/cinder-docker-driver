@@ -8,7 +8,7 @@ set -e
 #  'wget -qO- https://https://raw.githubusercontent.com/j-griffith/cinder-docker-driver/master/install.sh | sh'
 
 BIN_NAME=cinder-docker-driver
-DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.8/cinder-docker-driver"
+DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.9/cinder-docker-driver"
 BIN_DIR="/usr/bin"
 
 do_install() {
