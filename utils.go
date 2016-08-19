@@ -311,5 +311,5 @@ func getRootDiskUUID() (string, error) {
 	uuid := strings.Split(string(uuidString), "UUID=\"")[1]
 	uuid = strings.Split(string(uuid), " ")[0]
 	uuid = strings.Replace(uuid, "\"", " ", -1)
-	return uuid, nil
+	return string(uuid), nil
 }
