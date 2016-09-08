@@ -63,12 +63,20 @@ Example config with additional options:
 }
 ```
 ##Start the daemon
-We don't have an init script yet, so for now, just launch the driver daemon as root or with sudo:
+If you want to just launch the driver daemon as root (or sudo):
 
 ```shell
 sudo cinder-docker-driver  >> /var/log/cdd.out 2>&1 &'
 sudo service docker restart
 ```
+
+##Using systemd
+The install script includes creation of a systemd service file.
+If you used the install script you can just add your config file
+and use ```service cinder-docker-driver start```.
+
+Otherwise, you can inspect the install.sh script and create/setup
+your own systemd service file.
 
 ##Try it out
 Assuming your credentials were all set correctly and the driver was able to start up without any issues, you should be ready to go.
@@ -102,4 +110,7 @@ $ docker volume create -d cinder --name fredsFirstDVol -o size=10 -o type=lvm-1
 
 You can also just add the volume arguments to your docker run command and Docker will make the create calls for you.  Keep in mind that if the volume already exists we'll just grab it and try to attach it, if it doesn't, the Docker service will issue a request to the driver to create it.
 
-
+##What's next
+Put the whole thing in a container, and just run it from there.  Almost there,
+just trying to figure out some details on how to use iscsid in a container and
+have it effect the host.
