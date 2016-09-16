@@ -118,6 +118,7 @@ func New(cfgFile string) CinderDriver {
 		Username:         conf.Username,
 		Password:         conf.Password,
 		TenantID:         conf.TenantID,
+		AllowReauth:      true,
 	}
 	providerClient, err := openstack.AuthenticatedClient(auth)
 	if err != nil {
