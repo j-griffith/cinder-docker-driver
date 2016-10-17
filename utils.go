@@ -310,6 +310,6 @@ func getRootDiskUUID() (string, error) {
 	uuidString, _ := exec.Command("sh", "-c", cmd).Output()
 	uuid := strings.Split(string(uuidString), "UUID=\"")[1]
 	uuid = strings.Split(string(uuid), " ")[0]
-	uuid = strings.Replace(uuid, "\"", " ", -1)
+	uuid = strings.Replace(uuid, "\"", "", -1)
 	return string(uuid), nil
 }
