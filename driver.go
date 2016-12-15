@@ -35,6 +35,7 @@ type Config struct {
 	Password    string
 	TenantID    string
 	InitiatorIP string
+	DomainName  string
 }
 
 type CinderDriver struct {
@@ -103,6 +104,7 @@ func processConfig(cfg string) (Config, error) {
 
 func New(cfgFile string) CinderDriver {
 	conf, err := processConfig(cfgFile)
+	isV3 := strings.Contains(conf.Endpoint, "v3")
 	if err != nil {
 		log.Fatal("Error processing cinder driver config file: ", err)
 	}
@@ -113,6 +115,7 @@ func New(cfgFile string) CinderDriver {
 			log.Fatal("Failed to create Mount directory during driver init: %v", err)
 		}
 	}
+
 	auth := gophercloud.AuthOptions{
 		IdentityEndpoint: conf.Endpoint,
 		Username:         conf.Username,
@@ -120,6 +123,18 @@ func New(cfgFile string) CinderDriver {
 		TenantID:         conf.TenantID,
 		AllowReauth:      true,
 	}
+
+	if isV3 == true && conf.DomainName == "" {
+		log.Warning("V3 endpoint specified, but DomainName not set!")
+		log.Warning("Setting to \"Default\", maybe it'll work.")
+		auth.DomainName = "Default"
+	}
+
+	if conf.DomainName != "" && isV3 == true {
+		log.Info("Authorizing to a V3 Endpoint")
+		auth.DomainName = conf.DomainName
+	}
+
 	providerClient, err := openstack.AuthenticatedClient(auth)
 	if err != nil {
 		log.Fatal("Error initiating gophercloud provider client: ", err)

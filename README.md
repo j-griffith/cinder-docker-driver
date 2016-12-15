@@ -31,6 +31,22 @@ Example config.json file:
   TenantID: "979ddb6183834b9993954ca6de518c5a"
 }
 ```
+V3 Endpoints work as well, but we require one additional piece of information
+(DomainName).  If you specify a V3 endpoint, and no DomainName in your config,
+the driver will attempt to auth with a DomainName = "Default", if your
+DomainName is set to something other than this though, you'll need to specify
+it in your config file.  Here's an example of a V3 config:
+
+```json
+{
+  Endpoint: "http://172.16.140.145/identity/v3",
+  Username: "Fred",
+  Password: "FredsPassWord",
+  TenantID: "979ddb6183834b9993954ca6de518c5a",
+  DomainName: "MyAuthDomain"
+}
+```
+
 ###Minimal/Required Config
 Configuration options are stored in json format in config.json, the minimum required options provide just enough info to connect to our Cinder API and execute commands.  Note that for quick demos and just trying things out you can use the default interface and network for your iSCSI connections, it's highly recommended however you don't do this if you want to do anything that might require some performance.
 
