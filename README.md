@@ -8,7 +8,7 @@ with containers.
 
 ### Build From Source
 ```shell
-git clone https://github.com/j-griffith/cinder-docker-driver
+git clone https://github.com/ju-la-berger/cinder-docker-driver
 cd cinder-docker-driver
 go build
 sudo ./install.sh
@@ -18,7 +18,7 @@ sudo ./install.sh
 Use curl to download and run the install script in the package Github repo::
 
 ```shell
-curl -sSl https://raw.githubusercontent.com/j-griffith/cinder-docker-driver/master/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/ju-la-berger/cinder-docker-driver/v0.13/install.sh | sudo sh
 ```
 ##Configuration options
 Example config.json file:
