@@ -19,8 +19,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	"net/http"
 	"github.com/docker/go-plugins-helpers/volume"
+	b64 "encoding/base64"
+	"crypto/tls"
+	"bytes"
+	"os/exec"
 )
 
 type Config struct {
@@ -55,6 +59,19 @@ type ConnectorInfo struct {
 	VolumeID   string `mapstructure:"volume_id"`
 	TgtLun     int    `mapstructure:"target_lun"`
 	Encrypted  bool   `mapstructure:"encrypted"`
+}
+
+type ScaleIOInfo struct {
+	ScaleIO_ServerIP string `mapstructure:"serverIP"`
+	ScaleIO_ServerPort string `mapstructure:"serverPort"`
+	ScaleIO_ServerUserName string `mapstructure:"serverUsername"`
+	ScaleIO_ServerPassword string `mapstructure:"serverPassword"`
+	ScaleIO_VolumeName string `mapstructure:"scaleIO_volname"`
+	ScaleIO_VolumeID string `mapstructure:"scaleIO_volume_id"`
+	ScaleIO_IOPSLimit string `mapstructure:"iopsLimit"`
+	ScaleIO_AccessMode string `mapstructure:"access_mode"`
+	ScaleIO_BandWidthLimit string `mapstructure:"bandwidthLimit"`
+	ScaleIO_Encrypted bool `mapstructure:"encrypted"`
 }
 
 type ISCSITarget struct {
@@ -134,6 +151,10 @@ func New(cfgFile string) CinderDriver {
 		log.Info("Authorizing to a V3 Endpoint")
 		auth.DomainName = conf.DomainName
 	}
+
+        if isV3 == true {
+	        log.Infof("Set Domain Name to: %s", auth.DomainName)
+        }
 
 	providerClient, err := openstack.AuthenticatedClient(auth)
 	if err != nil {
@@ -339,17 +360,47 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	log.Debug("Issue InitializeConnection...")
 	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
 	log.Debugf("Response from InitializeConnection: %+v\n", response)
-	data := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})["data"]
-	var con ConnectorInfo
-	mapstructure.Decode(data, &con)
-	path, device, err := attachVolume(&con, "default")
-	log.Debug("iSCSI connection done")
-	if path == "" || device == "" && err == nil {
-		log.Error("Missing path or device, but err not set?")
-		log.Debug("Path: ", path, " ,Device: ", device)
-		return volume.Response{Err: err.Error()}
 
-	}
+        connection_info := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})
+        data := connection_info["data"]
+        driver_volume_type := connection_info["driver_volume_type"]
+
+        log.Debug("Driver Volume Type: ", driver_volume_type)
+
+        var path string
+        var device string
+        if driver_volume_type == "scaleio" {
+                log.Debug("ScaleIO connection start")
+		var scaleio ScaleIOInfo
+		mapstructure.Decode(data, &scaleio)
+		path, device, err = attachVolumeScaleIO(&scaleio, "default")
+		log.Debug("ScaleIO connection done")
+		if path == "" || device == "" && err == nil {
+			return volume.Response{Err: err.Error()}
+		}
+        } else if driver_volume_type == "iscsi" {
+                log.Debug("iSCSI connection start")
+	        var con ConnectorInfo
+	        mapstructure.Decode(data, &con)
+	        path, device, err = attachVolume(&con, "default")
+	        log.Debug("iSCSI connection done")
+		log.Debug("Path: ", path, " ,Device: ", device)
+
+                if path == "" || device == "" && err == nil {
+                       return volume.Response{Err: err.Error()}
+                }
+
+        } else {
+                log.Errorf("No driver_volume_type found")
+        }
+
+	//if path == "" || device == "" && err == nil {
+	//	log.Error("Missing path or device, but err not set?")
+	//	log.Debug("Path: ", path, " ,Device: ", device)
+	//	return volume.Response{Err: err.Error()}
+
+	//}
+	log.Debug("Path: ", path, " ,Device: ", device)
 	if err != nil {
 		log.Errorf("Failed to perform iscsi attach of volume %s: %v", r.Name, err)
 		return volume.Response{Err: err.Error()}
@@ -418,13 +469,13 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	// NOTE(jdg): Don't rely on things like `df --output=source mounpoint`
 	// that's no good for error situations.
 
-	tgt, portal := getTgtInfo(vol)
-	iscsiDetachVolume(tgt, portal)
-	log.Debug("Terminate Connection")
-	iface := d.Conf.InitiatorIFace
-	netDev, _ := net.InterfaceByName(iface)
-	IPs, _ := net.InterfaceAddrs()
-	log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
+	//tgt, portal := getTgtInfo(vol)
+	//iscsiDetachVolume(tgt, portal)
+	//log.Debug("Terminate Connection")
+	//iface := d.Conf.InitiatorIFace
+	//netDev, _ := net.InterfaceByName(iface)
+	//IPs, _ := net.InterfaceAddrs()
+	//log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
 	initiators, err := GetInitiatorIqns()
 	if err != nil {
 		log.Error("Failed to retrieve Initiator name!")
@@ -435,7 +486,7 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	// TODO(jdg): For now we're only supporting linux, but in the future we'll
 	// need to get rid of the hard coded Platform/OSType and fix this up for
 	// things like say Windows
-	log.Debugf("IPs=%+v\n", IPs)
+	//log.Debugf("IPs=%+v\n", IPs)
 	connectorOpts := volumeactions.ConnectorOpts{
 		IP:        d.Conf.InitiatorIP,
 		Host:      hostname,
@@ -445,6 +496,42 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 		Multipath: false,
 		Platform:  "x86",
 		OSType:    "linux",
+	}
+        log.Debug("Issue InitializeConnection...")
+        response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
+        log.Debugf("Response from InitializeConnection: %+v\n", response)
+
+        connection_info := response.Body.(map[string]interface{})["connection_info"].(map[string]interface{})
+        data := connection_info["data"]
+        driver_volume_type := connection_info["driver_volume_type"]
+
+        log.Debug("Driver Volume Type: ", driver_volume_type)
+	if driver_volume_type == "iscsi" {
+		tgt, portal := getTgtInfo(vol)
+	        iscsiDetachVolume(tgt, portal)
+		log.Debug("Terminate Connection")
+	        iface := d.Conf.InitiatorIFace
+	        netDev, _ := net.InterfaceByName(iface)
+		IPs, _ := net.InterfaceAddrs()
+	        log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
+	//	initiators, err := GetInitiatorIqns()
+	//        if err != nil {
+        //        	log.Error("Failed to retrieve Initiator name!")
+        //        	return volume.Response{Err: err.Error()}
+	//	}
+	} else if driver_volume_type == "scaleio" {
+                log.Debug("ScaleIO connection start")
+                var scaleio ScaleIOInfo
+                mapstructure.Decode(data, &scaleio)
+                result, err := detachVolumeScaleIO(&scaleio)
+		if result == false || err != nil {
+			log.Error("Cannot detach ScaleIO Volume")
+		} else {
+			log.Info("Successful detach ScaleIO Volume")
+		}
+                log.Debug("ScaleIO connection done")
+	} else {
+		log.Error("No driver_volume_type found")
 	}
 	log.Debugf("Unreserve volume: %s", vol.ID)
 	volumeactions.Unreserve(d.Client, vol.ID)
@@ -534,3 +621,137 @@ func attachVolume(c *ConnectorInfo, iface string) (path, device string, err erro
 	}
 	return path, device, nil
 }
+
+func getScaleIOToken(s *ScaleIOInfo) (token string, err error){
+        log.Debug("Get ScaleIO Token")
+        url := "https://"+s.ScaleIO_ServerIP+":"+s.ScaleIO_ServerPort+"/api/login"
+        tr := &http.Transport{
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+        }
+        client := &http.Client{Transport: tr}
+        req, err := http.NewRequest("GET", url, nil)
+        req.SetBasicAuth(s.ScaleIO_ServerUserName, s.ScaleIO_ServerPassword)
+        resp, err := client.Do(req)
+        if err != nil {
+                log.Errorf("Cannot connect to ScaleIO Gateway With error: ", err)
+                return token, err
+        }
+        defer resp.Body.Close()
+        body, err := ioutil.ReadAll(resp.Body)
+        /// processing token final Header: Authorization: Basic Base64([:token])
+        token = string(body)
+        token = ":"+strings.Split(token, `"`)[1]
+        log.Debug("Token (plain): ", token)
+        token = b64.StdEncoding.EncodeToString([]byte(token))
+        token = "Basic "+string(token)
+        return token, err
+}
+
+func attachVolumeScaleIO(s *ScaleIOInfo, iface string) (path, device string, err error) {
+        log.Debug("ScaleIO Info is: ", s)
+	/// get SDC ID 
+	scaleio_sdcID := getScaleIOGUID()
+        // get token
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	token,err := getScaleIOToken(s)
+        /// map volume 
+	log.Debug("Mapping Volume ID: ", s.ScaleIO_VolumeID)
+	url := "https://"+s.ScaleIO_ServerIP+":"+s.ScaleIO_ServerPort+"/api/instances/Volume::"+s.ScaleIO_VolumeID+"/action/addMappedSdc"
+	payload := []byte(`{"guid":"`+scaleio_sdcID+`","allowMultipleMappings": "TRUE"}`)
+	log.Debug("Payload: ", string(payload))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+	log.Debug("Header: ", req.Header)
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("Cannot Map ScaleIO Volume ID: ", s.ScaleIO_VolumeID)
+	}
+	defer resp.Body.Close()
+	if resp.Status == "200 OK" {
+		log.Info("Successful Map ScaleIO Volume ID: ", s.ScaleIO_VolumeID)
+		log.Debug("Looking for Device")
+		disk_filename := ""
+		tries := 0
+		for disk_filename == "" {
+			tries += 1
+			time.Sleep(2*time.Second)
+			if tries < 15 {
+				paths, _ := ioutil.ReadDir("/dev/disk/by-id/")
+				//log.Debug("All Files: ", paths)
+				for _, p := range paths {
+					path = p.Name()
+					log.Debug("Checking path: ", path)
+					if strings.HasPrefix(path, "emc-vol") && strings.HasSuffix(path, s.ScaleIO_VolumeID) {
+						disk_filename = path
+						log.Debug("Attached volume at path: ", path)
+						break
+					}
+				}
+			}else {
+				log.Errorf("ScaleIO Volume %s not found at expected path", s.ScaleIO_VolumeID)
+				break
+			}
+		}
+		if tries != 0 {
+			log.Infof("Found ScaleIO device %s after %d", s.ScaleIO_VolumeID, tries)
+                }
+	}
+	path = "/dev/disk/by-id/"+path
+	if waitForPathToExist(path, 15){
+		device = strings.TrimSpace(getDeviceFileFromIscsiPath(path))
+		log.Debugf("Attached volume at (path, devfile): %s, %s", path, device)
+		return path, device, nil
+	}
+	return path, device, nil
+}
+
+func detachVolumeScaleIO(s *ScaleIOInfo) (result bool, err error){
+        token, err := getScaleIOToken(s)
+	scaleio_sdcID := getScaleIOGUID()
+        log.Info("Unmapping Volume ID: ", s.ScaleIO_VolumeID)
+        url := "https://"+s.ScaleIO_ServerIP+":"+s.ScaleIO_ServerPort+"/api/instances/Volume::"+s.ScaleIO_VolumeID+"/action/removeMappedSdc"
+        payload := []byte(`{"guid":"`+scaleio_sdcID+`"}`)
+        tr := &http.Transport{
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+        }
+        client := &http.Client{Transport: tr}
+
+        log.Debug("Payload: ", string(payload))
+        req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+        req.Header.Set("Authorization", token)
+        req.Header.Set("Content-Type", "application/json")
+        log.Debug("Header: ", req.Header)
+        resp, err := client.Do(req)
+        if err != nil {
+                log.Errorf("Cannot Map ScaleIO Volume ID: ", s.ScaleIO_VolumeID)
+        }
+        defer resp.Body.Close()
+        if resp.Status == "200 OK" {
+                log.Info("Successful UnMap ScaleIO Volume ID: ", s.ScaleIO_VolumeID)
+                result = true
+        } else if resp.Status == "84" {
+                log.Error("Ignoring error unmapping volume: volume not mapped")
+                result = false
+        } else {
+                log.Error("Error When unmap ScaleIO Volume")
+                result = false
+        }
+        return result, err
+}
+
+func getScaleIOGUID() (guid string){
+	command := exec.Command("sudo", "/opt/emc/scaleio/sdc/bin/drv_cfg", "--query_guid")
+	var out bytes.Buffer
+	command.Stdout = &out
+	err := command.Run()
+	if err != nil {
+		log.Error("Cannot get ScaleIO GUID with error: ", err)
+	}
+	guid = out.String()
+	return strings.Trim(guid, "\n")
+}
+
