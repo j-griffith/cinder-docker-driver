@@ -1,10 +1,7 @@
 {
-	"ImportPath": "github.com/j-griffith/cinder-docker-driver",
+	"ImportPath": "github.com/ebalduf/cinder-docker-driver",
 	"GoVersion": "go1.6",
-	"GodepVersion": "v74",
-	"Packages": [
-		"./"
-	],
+	"GodepVersion": "v76",
 	"Deps": [
 		{
 			"ImportPath": "github.com/Microsoft/go-winio",
