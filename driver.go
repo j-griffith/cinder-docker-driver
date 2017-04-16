@@ -36,6 +36,7 @@ type Config struct {
 	TenantID    string
 	InitiatorIP string
 	DomainName  string
+	Region	    string
 }
 
 type CinderDriver struct {
@@ -140,8 +141,13 @@ func New(cfgFile string) CinderDriver {
 		log.Fatal("Error initiating gophercloud provider client: ", err)
 	}
 
-	client, err := openstack.NewBlockStorageV2(providerClient,
-		gophercloud.EndpointOpts{Region: "RegionOne"})
+	// Set the default region to RegionOne, the OpenStack default
+	endpointOpts := gophercloud.EndpointOpts{Region: conf.Region}
+	if endpointOpts.Region == "" {
+		endpointOpts.Region = "RegionOne"
+	}
+
+	client, err := openstack.NewBlockStorageV2(providerClient, endpointOpts)
 	if err != nil {
 		log.Fatal("Error initiating gophercloud cinder client: ", err)
 	}
