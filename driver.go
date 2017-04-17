@@ -28,6 +28,7 @@ type Config struct {
 	MountPoint     string
 	InitiatorIFace string //iface to use of iSCSI initiator
 	HostUUID       string
+	SocketGroup    string //Usergroup to use for the plugin socket
 
 	// Cinder credentials
 	Endpoint    string
@@ -134,6 +135,11 @@ func New(cfgFile string) CinderDriver {
 	if conf.DomainName != "" && isV3 == true {
 		log.Info("Authorizing to a V3 Endpoint")
 		auth.DomainName = conf.DomainName
+	}
+
+	// set the default SocketGroup to root, which should work on most Linuxes
+	if conf.SocketGroup == "" {
+		conf.SocketGroup = "root"
 	}
 
 	providerClient, err := openstack.AuthenticatedClient(auth)
