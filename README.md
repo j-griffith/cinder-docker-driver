@@ -25,10 +25,11 @@ Example config.json file:
 
 ```json
 {
-  Endpoint: "http://172.16.140.145:5000/v2.0",
-  Username: "Fred",
-  Password: "FredsPassWord",
-  TenantID: "979ddb6183834b9993954ca6de518c5a"
+  "Endpoint": "http://172.16.140.145:5000/v2.0",
+  "Username": "Fred",
+  "Password": "FredsPassWord",
+  "TenantID": "979ddb6183834b9993954ca6de518c5a",
+  "Region": "RegionOne"
 }
 ```
 V3 Endpoints work as well, but we require one additional piece of information
@@ -39,11 +40,12 @@ it in your config file.  Here's an example of a V3 config:
 
 ```json
 {
-  Endpoint: "http://172.16.140.145/identity/v3",
-  Username: "Fred",
-  Password: "FredsPassWord",
-  TenantID: "979ddb6183834b9993954ca6de518c5a",
-  DomainName: "MyAuthDomain"
+  "Endpoint": "http://172.16.140.145/identity/v3",
+  "Username": "Fred",
+  "Password": "FredsPassWord",
+  "TenantID": "979ddb6183834b9993954ca6de518c5a",
+  "DomainName": "MyAuthDomain",
+  "Region": "RegionOne"
 }
 ```
 
@@ -62,20 +64,21 @@ Configuration options are stored in json format in config.json, the minimum requ
 - InitiatorIFace (default)
 - HostUUID (root disk UUID)
 - InitiatorIP (default interface IP)
+- Region (defaults to "RegionOne")
 
 Example config with additional options:
 
 ```json
 {
-  Endpoint: "http://172.16.140.145:5000/v2.0",
-  Username: "Fred",
-  Password: "FredsPassWord",
-  TenantID: "979ddb6183834b9993954ca6de518c5a",
-  DefaultVolSz: 1,
-  MountPoint: "/mnt/cvols",
-  InitiatorIFace: "/dev/eth4",
-  HostUUID: "219b0670-a214-4281-8424-5bb3be109ddd",
-  InitiatorIP: "192.168.4.201"
+  "Endpoint": "http://172.16.140.145:5000/v2.0",
+  "Username": "Fred",
+  "Password": "FredsPassWord",
+  "TenantID": "979ddb6183834b9993954ca6de518c5a",
+  "DefaultVolSz": 1,
+  "MountPoint": "/mnt/cvols",
+  "InitiatorIFace": "/dev/eth4",
+  "HostUUID": "219b0670-a214-4281-8424-5bb3be109ddd",
+  "InitiatorIP": "192.168.4.201"
 }
 ```
 ## Start the daemon

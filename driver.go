@@ -28,6 +28,7 @@ type Config struct {
 	MountPoint     string
 	InitiatorIFace string //iface to use of iSCSI initiator
 	HostUUID       string
+	SocketGroup    string //Usergroup to use for the plugin socket
 
 	// Cinder credentials
 	Endpoint    string
@@ -36,6 +37,7 @@ type Config struct {
 	TenantID    string
 	InitiatorIP string
 	DomainName  string
+	Region	    string
 }
 
 type CinderDriver struct {
@@ -135,13 +137,23 @@ func New(cfgFile string) CinderDriver {
 		auth.DomainName = conf.DomainName
 	}
 
+	// set the default SocketGroup to root, which should work on most Linuxes
+	if conf.SocketGroup == "" {
+		conf.SocketGroup = "root"
+	}
+
 	providerClient, err := openstack.AuthenticatedClient(auth)
 	if err != nil {
 		log.Fatal("Error initiating gophercloud provider client: ", err)
 	}
 
-	client, err := openstack.NewBlockStorageV2(providerClient,
-		gophercloud.EndpointOpts{Region: "RegionOne"})
+	// Set the default region to RegionOne, the OpenStack default
+	endpointOpts := gophercloud.EndpointOpts{Region: conf.Region}
+	if endpointOpts.Region == "" {
+		endpointOpts.Region = "RegionOne"
+	}
+
+	client, err := openstack.NewBlockStorageV2(providerClient, endpointOpts)
 	if err != nil {
 		log.Fatal("Error initiating gophercloud cinder client: ", err)
 	}
