@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-declare -r BIN_NAME="cinder-docker-driver"
-declare -r DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13-rc4/cinder-docker-driver.linux-amd64"
-declare -r BIN_DIR="/usr/bin"
+BIN_NAME="cinder-docker-driver"
+DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13-rc5/cinder-docker-driver.linux-amd64"
+BIN_DIR="/usr/bin"
 
-function do_install {
+do_install () {
     mkdir -p /var/lib/cinder/dockerdriver
     mkdir -p /var/lib/cinder/mount
     rm ${BIN_DIR}/${BIN_NAME} || true

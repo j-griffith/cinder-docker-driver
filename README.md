@@ -18,7 +18,7 @@ sudo ./install.sh
 Use curl to download and run the install script in the package Github repo::
 
 ```shell
-curl -sSL https://raw.githubusercontent.com/ju-la-berger/cinder-docker-driver/v0.13-rc4/install.sh | sudo sh
+curl -sSL https://raw.githubusercontent.com/ju-la-berger/cinder-docker-driver/v0.13-rc5/install.sh | sudo sh
 ```
 ## Configuration options
 Example config.json file:
