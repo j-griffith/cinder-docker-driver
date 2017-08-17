@@ -2,7 +2,7 @@
 set -e
 
 declare -r BIN_NAME="cinder-docker-driver"
-declare -r DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13-rc4/cinder-docker-driver"
+declare -r DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13-rc4/cinder-docker-driver.linux-amd64"
 declare -r BIN_DIR="/usr/bin"
 
 function do_install {
