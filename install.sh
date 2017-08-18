@@ -2,7 +2,7 @@
 set -e
 
 BIN_NAME="cinder-docker-driver"
-DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13-rc5/cinder-docker-driver.linux-amd64"
+DRIVER_URL="https://github.com/ju-la-berger/cinder-docker-driver/releases/download/v0.13.0/cinder-docker-driver.linux-amd64"
 BIN_DIR="/usr/bin"
 
 do_install () {
