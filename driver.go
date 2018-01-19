@@ -69,6 +69,8 @@ type ISCSITarget struct {
 	Discovery string
 }
 
+const RootLevelFolder string = "volume_content"
+
 func processConfig(cfg string) (Config, error) {
 	var conf Config
 	content, err := ioutil.ReadFile(cfg)
@@ -283,7 +285,7 @@ func (d CinderDriver) Remove(r volume.Request) volume.Response {
 
 func (d CinderDriver) Path(r volume.Request) volume.Response {
 	log.Info("Retrieve path info for volume: `", r.Name, "`")
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
 	log.Debug("Path reported as: ", path)
 	return volume.Response{Mountpoint: path}
 }
@@ -377,13 +379,13 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 			return volume.Response{Err: err.Error()}
 		}
 	}
-	if mountErr := Mount(device, d.Conf.MountPoint+"/"+r.Name); mountErr != nil {
+	path = filepath.Join(d.Conf.MountPoint, r.Name)
+	if mountErr := Mount(device, path); mountErr != nil {
 		err := errors.New("Problem mounting docker volume ")
 		log.Error(err)
 		return volume.Response{Err: err.Error()}
 	}
 
-	path = filepath.Join(d.Conf.MountPoint, r.Name)
 	// NOTE(jdg): Cinder will barf if you provide both Instance and HostName
 	// which is kinda silly... but it is what it is
 	attachOpts := volumeactions.AttachOpts{
@@ -394,7 +396,12 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	log.Debug("Call gophercloud Attach...")
 	attRes := volumeactions.Attach(d.Client, vol.ID, &attachOpts)
 	log.Debugf("Attach results: %+v", attRes)
-	return volume.Response{Mountpoint: d.Conf.MountPoint + "/" + r.Name}
+
+	// Create root level folder after mounting.
+	pathForDocker := filepath.Join(path, RootLevelFolder)
+	os.Mkdir(pathForDocker, os.ModeDir)
+
+	return volume.Response{Mountpoint: pathForDocker}
 }
 
 func (d CinderDriver) Unmount(r volume.Request) volume.Response {
@@ -413,7 +420,7 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 		return volume.Response{Err: err.Error()}
 	}
 
-	if umountErr := Umount(d.Conf.MountPoint + "/" + r.Name); umountErr != nil {
+	if umountErr := Umount(filepath.Join(d.Conf.MountPoint, r.Name)); umountErr != nil {
 		if umountErr.Error() == "Volume is not mounted" {
 			log.Warning("Request to unmount volume, but it's not mounted")
 			return volume.Response{}
@@ -487,14 +494,14 @@ func (d CinderDriver) Get(r volume.Request) volume.Response {
 	// NOTE(jdg): Volume can exist but not necessarily be attached, this just
 	// gets the volume object and where it "would" be attached, it may or may
 	// not currently be attached, but we don't care here
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
 
 	return volume.Response{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}
 }
 
 func (d CinderDriver) List(r volume.Request) volume.Response {
 	log.Info("List volumes: ", r.Name)
-	path := filepath.Join(d.Conf.MountPoint, r.Name)
+	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
 	var vols []*volume.Volume
 	pager := volumes.List(d.Client, volumes.ListOpts{})
 	pager.EachPage(func(page pagination.Page) (bool, error) {
