@@ -1,7 +1,7 @@
 {
-    "Endpoint": "http://172.16.140.245:5000/v2.0",
+    "Endpoint": "http://10.117.36.27/identity/v3",
     "Username": "admin",
-    "Password": "solidfire",
-    "TenantID": "092eb256b5b9402abe57d59f58ae3dbc",
+    "Password": "nomoresecret",
+    "TenantID": "f90c6e1559594a198f2a8c9228002bcf",
     "Region": "RegionOne"
 }
