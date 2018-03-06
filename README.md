@@ -7,18 +7,32 @@ with containers.
 ## Install
 
 ### Build From Source
+Obviously you'll need to have a golang dev environment setup, one piece of that
+includes the golang dep tool.  You can find install instructions and usage info
+here:  https://github.com/golang/dep
+
+For the most part just installing the tool is good enough, the Makefile will
+take care of it's usage for you.
+
 ```shell
 git clone https://github.com/j-griffith/cinder-docker-driver
 cd cinder-docker-driver
-go build
+make clean; make
 sudo ./install.sh
 ```
+
+NOTE the specification of the `source` argument to the install script, this
+will result in the install script copying your locally built binary
+(```./_bin/cdd```) into the install directory and creating the systemd file.
+
+Omitting the `source` arg (or providing any other argument) will instruct the
+installer to pull the latest release from github and installing it instead.
 
 ### Just the bits
 Use curl to download and run the install script in the package Github repo::
 
 ```shell
-curl -sSl https://raw.githubusercontent.com/j-griffith/cinder-docker-driver/master/install.sh | sh
+curl -sSl https://raw.githubusercontent.com/j-griffith/cinder-docker-driver/master/install.sh | sudo sh
 ```
 ## Configuration options
 Example config.json file:
@@ -44,8 +58,8 @@ it in your config file.  Here's an example of a V3 config:
   "Username": "Fred",
   "Password": "FredsPassWord",
   "TenantID": "979ddb6183834b9993954ca6de518c5a",
-  "DomainName": "MyAuthDomain",
   "Region": "RegionOne"
+  "DomainName": "MyAuthDomain",
 }
 ```
 
@@ -85,14 +99,14 @@ Example config with additional options:
 If you want to just launch the driver daemon as root (or sudo):
 
 ```shell
-sudo cinder-docker-driver  >> /var/log/cdd.out 2>&1 &'
+sudo ./_bin/cdd >> /var/log/cdd.out 2>&1 &'
 sudo service docker restart
 ```
 
 ## Using systemd
 The install script includes creation of a systemd service file.
 If you used the install script you can just add your config file
-and use ```service cinder-docker-driver start```.
+and use ```service cdd start```.
 
 Otherwise, you can inspect the install.sh script and create/setup
 your own systemd service file.

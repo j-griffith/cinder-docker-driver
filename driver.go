@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/mitchellh/mapstructure"
 	"github.com/rackspace/gophercloud"
@@ -168,7 +167,7 @@ func New(cfgFile string) CinderDriver {
 	return d
 }
 
-func (d CinderDriver) parseOpts(r volume.Request) volumes.CreateOpts {
+func (d CinderDriver) parseOpts(r *volume.CreateRequest) volumes.CreateOpts {
 	opts := volumes.CreateOpts{}
 	opts.Size = d.Conf.DefaultVolSz
 	for k, v := range r.Options {
@@ -223,7 +222,7 @@ func (d CinderDriver) getByName(name string) (volumes.Volume, error) {
 	return vol, nil
 }
 
-func (d CinderDriver) Create(r volume.Request) volume.Response {
+func (d CinderDriver) Create(r *volume.CreateRequest) error {
 	// TODO(jdg): Right now we have a weird mix for some of our semantics.  We
 	// wanted to be able to dynamically create, but create can be called when a
 	// volume already exists and is going to be used on another Docker node (ie
@@ -237,7 +236,7 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	vol, err := d.getByName(r.Name)
 	if err != nil {
 		log.Errorf("Error getting existing Volume by Name: (volume %s, error %s)", vol, err.Error())
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 	// FIXME(jdg): Keep in mind, NotFound isn't the only error we can get here,
 	// we can also receive a "Multiple matches" error if there are duplicate
@@ -250,47 +249,47 @@ func (d CinderDriver) Create(r volume.Request) volume.Response {
 	_, err = volumes.Create(d.Client, opts).Extract()
 	if err != nil {
 		log.Errorf("Failed to Create volume: %s\nEncountered error: %s", r.Name, err)
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
 	if err := os.Mkdir(path, os.ModeDir); err != nil {
 		log.Errorf("Failed to create Mount directory: %v", err)
-		return volume.Response{Err: err.Error()}
+		return err
 	}
-	return volume.Response{}
+	return nil
 }
 
-func (d CinderDriver) Remove(r volume.Request) volume.Response {
+func (d CinderDriver) Remove(r *volume.RemoveRequest) error {
 	log.Info("Remove/Delete Volume: ", r.Name)
 	vol, err := d.getByName(r.Name)
 	log.Debugf("Remove/Delete Volume ID: %s", vol.ID)
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Remove operation", err)
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 	errRes := volumes.Delete(d.Client, vol.ID)
 	log.Debugf("Response from Delete: %+v\n", errRes)
 	if errRes.Err != nil {
 		log.Errorf("Failed to Delete volume: %s\nEncountered error: %s", vol, errRes)
 		log.Debugf("Error message: %s", errRes.ExtractErr())
-		return volume.Response{Err: fmt.Sprintf("%s", errRes.ExtractErr())}
+		return errRes.ExtractErr()
 	}
 	path := filepath.Join(d.Conf.MountPoint, r.Name)
 	if err := os.Remove(path); err != nil {
 		log.Error("Failed to remove Mount directory: %v", err)
-		return volume.Response{Err: err.Error()}
+		return err
 	}
-	return volume.Response{}
+	return nil
 }
 
-func (d CinderDriver) Path(r volume.Request) volume.Response {
+func (d CinderDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	log.Info("Retrieve path info for volume: `", r.Name, "`")
 	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
 	log.Debug("Path reported as: ", path)
-	return volume.Response{Mountpoint: path}
+	return &volume.PathResponse{Mountpoint: path}, nil
 }
 
-func (d CinderDriver) Mount(r volume.Request) volume.Response {
+func (d CinderDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 
@@ -299,12 +298,12 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	vol, err := d.getByName(r.Name)
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Mount operation", err)
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 	if vol.ID == "" {
 		log.Error("Volume Not Found!")
 		err := errors.New("Volume Not Found")
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 	if vol.Status == "creating" {
 		// NOTE(jdg):  This may be a successive call after a create which from
@@ -316,14 +315,14 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Mount operation", err)
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 
 	if vol.Status != "available" {
 		log.Debugf("Volume info: %+v\n", vol)
 		log.Errorf("Invalid volume status for Mount request, volume is: %s but must be available", vol.Status)
 		err := errors.New("Invalid volume status for Mount request")
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 	volumeactions.Reserve(d.Client, vol.ID)
 
@@ -336,7 +335,7 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	initiator, err := GetInitiatorIqns()
 	if err != nil {
 		log.Error("Failed to retrieve Initiator name!")
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 	// TODO(ebalduf): Change assumption that we have only one Initiator defined
 	log.Debugf("Value of IPs is=%+v\n", IPs)
@@ -361,12 +360,12 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	if path == "" || device == "" && err == nil {
 		log.Error("Missing path or device, but err not set?")
 		log.Debug("Path: ", path, " ,Device: ", device)
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 
 	}
 	if err != nil {
 		log.Errorf("Failed to perform iscsi attach of volume %s: %v", r.Name, err)
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 
 	if GetFSType(device) == "" {
@@ -376,14 +375,14 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 		if err != nil {
 			err := errors.New("Failed to format device")
 			log.Error(err)
-			return volume.Response{Err: err.Error()}
+		    return &volume.MountResponse{}, err
 		}
 	}
 	path = filepath.Join(d.Conf.MountPoint, r.Name)
 	if mountErr := Mount(device, path); mountErr != nil {
 		err := errors.New("Problem mounting docker volume ")
 		log.Error(err)
-		return volume.Response{Err: err.Error()}
+		return &volume.MountResponse{}, err
 	}
 
 	// NOTE(jdg): Cinder will barf if you provide both Instance and HostName
@@ -401,10 +400,10 @@ func (d CinderDriver) Mount(r volume.Request) volume.Response {
 	pathForDocker := filepath.Join(path, RootLevelFolder)
 	os.Mkdir(pathForDocker, os.ModeDir)
 
-	return volume.Response{Mountpoint: pathForDocker}
+	return &volume.MountResponse{Mountpoint: pathForDocker}, nil
 }
 
-func (d CinderDriver) Unmount(r volume.Request) volume.Response {
+func (d CinderDriver) Unmount(r *volume.UnmountRequest) error {
 	log.Infof("Unmounting volume: %+v", r)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -412,20 +411,20 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	if vol.ID == "" {
 		log.Errorf("Request to Unmount failed because volume `%s` could not be found", r.Name)
 		err := errors.New("Volume Not Found")
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 
 	if err != nil {
 		log.Errorf("Failed to retrieve volume named: `", r.Name, "` during Unmount operation", err)
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 
 	if umountErr := Umount(filepath.Join(d.Conf.MountPoint, r.Name)); umountErr != nil {
 		if umountErr.Error() == "Volume is not mounted" {
 			log.Warning("Request to unmount volume, but it's not mounted")
-			return volume.Response{}
+			return nil
 		} else {
-			return volume.Response{Err: umountErr.Error()}
+			return umountErr
 		}
 	}
 	// NOTE(jdg): So there's a couple issues with how Docker works here.  If
@@ -447,7 +446,7 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	initiators, err := GetInitiatorIqns()
 	if err != nil {
 		log.Error("Failed to retrieve Initiator name!")
-		return volume.Response{Err: err.Error()}
+		return err
 	}
 	hostname, _ := os.Hostname()
 	// TODO(ebalduf): Change assumption that we have only one Initiator defined
@@ -471,47 +470,46 @@ func (d CinderDriver) Unmount(r volume.Request) volume.Response {
 	volumeactions.TerminateConnection(d.Client, vol.ID, &connectorOpts)
 	log.Debugf("Detach volume: %s", vol.ID)
 	volumeactions.Detach(d.Client, vol.ID)
-	return volume.Response{}
+	return nil
 }
 
-func (d CinderDriver) Capabilities(r volume.Request) volume.Response {
-	return volume.Response{Capabilities: volume.Capability{Scope: "global"}}
+func (d CinderDriver) Capabilities() *volume.CapabilitiesResponse {
+	return &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "global"}}
 }
 
-func (d CinderDriver) Get(r volume.Request) volume.Response {
+func (d CinderDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 	log.Info("Get volume: ", r.Name)
 	vol, err := d.getByName(r.Name)
 	if err != nil {
 		log.Errorf("Failed to retrieve volume `%s`: %s", r.Name, err.Error())
-		return volume.Response{Err: err.Error()}
+		return &volume.GetResponse{}, err
 	}
 	if vol.ID == "" {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Get operation", err)
 		err = errors.New("Volume Not Found")
-		return volume.Response{Err: err.Error()}
+		return &volume.GetResponse{}, err
 	}
 
 	// NOTE(jdg): Volume can exist but not necessarily be attached, this just
 	// gets the volume object and where it "would" be attached, it may or may
 	// not currently be attached, but we don't care here
 	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
-
-	return volume.Response{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}
+	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: path}}, nil
 }
 
-func (d CinderDriver) List(r volume.Request) volume.Response {
-	log.Info("List volumes: ", r.Name)
-	path := filepath.Join(d.Conf.MountPoint, r.Name, RootLevelFolder)
+func (d CinderDriver) List() (*volume.ListResponse, error) {
+	log.Info("List volumes")
 	var vols []*volume.Volume
 	pager := volumes.List(d.Client, volumes.ListOpts{})
 	pager.EachPage(func(page pagination.Page) (bool, error) {
 		vlist, _ := volumes.ExtractVolumes(page)
 		for _, v := range vlist {
+	        path := filepath.Join(d.Conf.MountPoint, v.Name, RootLevelFolder)
 			vols = append(vols, &volume.Volume{Name: v.Name, Mountpoint: path})
 		}
 		return true, nil
 	})
-	return volume.Response{Volumes: vols}
+	return &volume.ListResponse{Volumes: vols}, nil
 }
 
 func iscsiDetachVolume(tgt string, portal string) (err error) {
