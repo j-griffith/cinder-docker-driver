@@ -7,16 +7,25 @@ set -e
 # or
 #  'wget -qO- https://raw.githubusercontent.com/j-griffith/cinder-docker-driver/master/install.sh | sh'
 
-BIN_NAME=cinder-docker-driver
-DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.12/cinder-docker-driver"
+VERSION=${1:-release}
+BIN_NAME=cdd
+DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.13/cinder-docker-driver"
+SRC_BIN=./_bin/cdd
 BIN_DIR="/usr/bin"
 
 do_install() {
 mkdir -p /var/lib/cinder/dockerdriver
 mkdir -p /var/lib/cinder/mount
 rm $BIN_DIR/$BIN_NAME || true
-curl -sSL -o $BIN_DIR/$BIN_NAME $DRIVER_URL
-chmod +x $BIN_DIR/$BIN_NAME
+echo "Version is: ${VERSION}"
+if [ "${VERSION}" = 'source' ]; then
+  cp ./_bin/cdd $BIN_DIR/$BIN_NAME
+else
+  echo "Installing release from github repo..."
+  curl -sSL -o $BIN_DIR/$BIN_NAME $DRIVER_URL
+  chmod +x $BIN_DIR/$BIN_NAME
+fi
+
 echo "
 [Unit]
 Description=\"Cinder Docker Plugin daemon\"
@@ -25,7 +34,7 @@ Requires=cinder-docker-driver.service
 
 [Service]
 TimeoutStartSec=0
-ExecStart=/usr/bin/cinder-docker-driver &
+ExecStart=/usr/bin/cdd &
 
 [Install]
 WantedBy=docker.service" >/etc/systemd/system/cinder-docker-driver.service
