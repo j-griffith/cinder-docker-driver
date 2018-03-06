@@ -36,5 +36,5 @@ func main() {
 	log.Info("Starting cinder-docker-driver version: ", VERSION)
 	d := New(*cfgFile)
 	h := volume.NewHandler(d)
-	log.Info(h.ServeUnix(d.Conf.SocketGroup, "cinder"))
+	log.Info(h.ServeUnix("cinder", 0))
 }
