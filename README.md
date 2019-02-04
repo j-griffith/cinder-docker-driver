@@ -58,8 +58,8 @@ it in your config file.  Here's an example of a V3 config:
   "Username": "Fred",
   "Password": "FredsPassWord",
   "TenantID": "979ddb6183834b9993954ca6de518c5a",
-  "Region": "RegionOne"
-  "DomainName": "MyAuthDomain",
+  "Region": "RegionOne",
+  "DomainName": "MyAuthDomain"
 }
 ```
 
