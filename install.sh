@@ -9,7 +9,7 @@ set -e
 
 VERSION=${1:-release}
 BIN_NAME=cdd
-DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.13/cinder-docker-driver"
+DRIVER_URL="https://github.com/j-griffith/cinder-docker-driver/releases/download/v0.13/cdd"
 SRC_BIN=./_bin/cdd
 BIN_DIR="/usr/bin"
 
