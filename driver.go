@@ -3,13 +3,13 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/mitchellh/mapstructure"
-	"github.com/rackspace/gophercloud"
-	"github.com/rackspace/gophercloud/openstack"
-	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/extensions/volumeactions"
-	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes"
-	"github.com/rackspace/gophercloud/pagination"
+	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v2/volumes"
+	"github.com/gophercloud/gophercloud/pagination"
 	"io/ioutil"
 	"net"
 	"os"
@@ -267,7 +267,7 @@ func (d CinderDriver) Remove(r *volume.RemoveRequest) error {
 		log.Errorf("Failed to retrieve volume named: ", r.Name, "during Remove operation", err)
 		return err
 	}
-	errRes := volumes.Delete(d.Client, vol.ID)
+	errRes := volumes.Delete(d.Client, vol.ID, volumes.DeleteOpts{})
 	log.Debugf("Response from Delete: %+v\n", errRes)
 	if errRes.Err != nil {
 		log.Errorf("Failed to Delete volume: %s\nEncountered error: %s", vol, errRes)
@@ -332,22 +332,22 @@ func (d CinderDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, erro
 	log.Debugf("iface: %+v\n Addrs: %+v", netDev, IPs)
 
 	log.Debug("Gather up initiator IQNs...")
-	initiator, err := GetInitiatorIqns()
+	initiators, err := GetInitiatorIqns()
 	if err != nil {
 		log.Error("Failed to retrieve Initiator name!")
 		return &volume.MountResponse{}, err
 	}
 	// TODO(ebalduf): Change assumption that we have only one Initiator defined
 	log.Debugf("Value of IPs is=%+v\n", IPs)
-	connectorOpts := volumeactions.ConnectorOpts{
+	connectorOpts := volumeactions.InitializeConnectionOpts{
 		IP:        d.Conf.InitiatorIP,
 		Host:      hostname,
-		Initiator: initiator[0],
+		Initiator: initiators[0],
 		Wwpns:     []string{},
 		Wwnns:     "",
-		Multipath: false,
-		Platform:  "x86",
-		OSType:    "linux",
+		Multipath: gophercloud.Disabled,
+		Platform:  "x86_64",
+		OSType:    "linux2",
 	}
 	log.Debug("Issue InitializeConnection...")
 	response := volumeactions.InitializeConnection(d.Client, vol.ID, &connectorOpts)
@@ -454,22 +454,22 @@ func (d CinderDriver) Unmount(r *volume.UnmountRequest) error {
 	// need to get rid of the hard coded Platform/OSType and fix this up for
 	// things like say Windows
 	log.Debugf("IPs=%+v\n", IPs)
-	connectorOpts := volumeactions.ConnectorOpts{
+	connectorOpts := volumeactions.TerminateConnectionOpts{
 		IP:        d.Conf.InitiatorIP,
 		Host:      hostname,
 		Initiator: initiators[0],
 		Wwpns:     []string{},
 		Wwnns:     "",
-		Multipath: false,
-		Platform:  "x86",
-		OSType:    "linux",
+		Multipath: gophercloud.Disabled,
+		Platform:  "x86_64",
+		OSType:    "linux2",
 	}
 	log.Debugf("Unreserve volume: %s", vol.ID)
 	volumeactions.Unreserve(d.Client, vol.ID)
 	log.Debugf("Terminate connection for volume: %s", vol.ID)
 	volumeactions.TerminateConnection(d.Client, vol.ID, &connectorOpts)
 	log.Debugf("Detach volume: %s", vol.ID)
-	volumeactions.Detach(d.Client, vol.ID)
+	volumeactions.Detach(d.Client, vol.ID, &volumeactions.DetachOpts{})
 	return nil
 }
 
