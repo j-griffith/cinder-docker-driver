@@ -3,8 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"github.com/rackspace/gophercloud/openstack/blockstorage/v2/volumes"
+	log "github.com/sirupsen/logrus"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v2/volumes"
 	"net"
 	"os"
 	"os/exec"
